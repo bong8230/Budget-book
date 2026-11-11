@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createClient } from "@/lib/db/client";
 
 type Status = "loading" | "unsupported" | "needs-install" | "denied" | "off" | "on";
 
@@ -31,7 +32,10 @@ export function PushToggle({ ledgerId }: { ledgerId: string }) {
       if (Notification.permission === "denied") return setStatus("denied");
       const reg = await navigator.serviceWorker.getRegistration();
       const sub = await reg?.pushManager.getSubscription();
-      setStatus(sub ? "on" : "off");
+      if (!sub) return setStatus("off");
+      // 이 브라우저 구독이 지금 로그인한 계정 것인지 서버(RLS: 본인 행만 보임)에서 확인한다
+      const { data } = await createClient().from("push_subscriptions").select("id").eq("endpoint", sub.endpoint).maybeSingle();
+      setStatus(data ? "on" : "off");
     })();
   }, []);
 
@@ -43,6 +47,8 @@ export function PushToggle({ ledgerId }: { ledgerId: string }) {
     if (permission !== "granted") return setStatus(permission === "denied" ? "denied" : "off");
     const reg = (await navigator.serviceWorker.getRegistration()) ?? (await navigator.serviceWorker.register("/sw.js"));
     await navigator.serviceWorker.ready;
+    // 이전 계정이 남긴 구독이 있으면 버리고 새로 만든다 (엔드포인트가 바뀌어 이전 계정 행과 섞이지 않음)
+    await (await reg.pushManager.getSubscription())?.unsubscribe();
     const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
     const res = await fetch("/api/push/subscribe", {
       method: "POST",

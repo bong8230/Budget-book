@@ -9,7 +9,13 @@ export const metadata = { title: "확인 대기 · 우리집 가계부" };
 
 const SOURCE_LABEL: Record<string, string> = { sms: "문자", notification: "앱 알림", csv: "파일", manual: "직접" };
 
-export default async function InboxPage() {
+const ERRORS: Record<string, string> = {
+  accept: "등록하지 못했어요. 이미 처리됐거나 금액·날짜를 읽지 못한 내역이면 ‘수정 후 등록’을 써주세요.",
+  ignore: "무시 처리하지 못했어요. 다시 시도해주세요.",
+};
+
+export default async function InboxPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error } = await searchParams;
   const { db, ledger } = await getAppContext();
   const { data } = await listPendingImports(db, ledger.id);
   const items = (data ?? []) as ImportItem[];
@@ -20,6 +26,12 @@ export default async function InboxPage() {
         <h1 className="text-lg font-bold">확인 대기</h1>
         <p className="mt-1 text-sm text-muted">내 폰에서 가져온 입출금 알림이에요. 등록할 것만 골라주세요.</p>
       </header>
+
+      {error && ERRORS[error] && (
+        <p role="alert" className="rounded-2xl bg-surface p-3 text-sm text-expense">
+          {ERRORS[error]}
+        </p>
+      )}
 
       {items.length === 0 ? (
         <div className="rounded-2xl bg-surface p-8 text-center text-sm text-muted">

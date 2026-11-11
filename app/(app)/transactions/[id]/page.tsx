@@ -9,8 +9,15 @@ import { deleteTransactionAction, updateTransactionAction } from "../../actions"
 
 export const metadata = { title: "내역 수정 · 우리집 가계부" };
 
-export default async function EditTransactionPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EditTransactionPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
   const { id } = await params;
+  const { error } = await searchParams;
   const { db, user, ledger, members } = await getAppContext();
   const [{ data: tx }, { data: categories }] = await Promise.all([
     db.from("transactions").select("*").eq("id", id).eq("ledger_id", ledger.id).maybeSingle<Transaction>(),
@@ -29,6 +36,11 @@ export default async function EditTransactionPage({ params }: { params: Promise<
           </button>
         </form>
       </PageHeader>
+      {error === "delete" && (
+        <p role="alert" className="mb-3 rounded-xl bg-surface p-3 text-sm text-expense">
+          삭제하지 못했어요. 다시 시도해주세요.
+        </p>
+      )}
       <p className="-mt-2 mb-3 px-1 text-xs text-muted">{memberName(members, tx.created_by, user.id)} 입력</p>
       <TransactionForm
         categories={toOptions(categories ?? [])}
