@@ -86,7 +86,7 @@ export default async function HomePage() {
           {upcoming.length > 0 && (
             <ul className="mt-2 space-y-1 text-sm">
               {upcoming.slice(0, 3).map((r) => (
-                <li key={r.item.id} className="tabular flex justify-between">
+                <li key={`${r.item.id}-${r.dueDate}`} className="tabular flex justify-between">
                   <span className={r.dueDate < today ? "text-expense" : ""}>
                     {Number(r.dueDate.slice(8))}일 {r.item.name}
                     {r.dueDate < today ? " (지남)" : ""}

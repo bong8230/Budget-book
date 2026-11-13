@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useFormStatus } from "react-dom";
 
 export const inputClass =
@@ -50,4 +51,11 @@ export function ConfirmButton({ message, children, className }: { message: strin
       {children}
     </button>
   );
+}
+
+/** 서버 액션이 { go } 를 돌려주면 그 주소를 새로 연다 */
+export function useGo(state: { go?: string } | undefined) {
+  useEffect(() => {
+    if (state?.go) window.location.replace(state.go);
+  }, [state]);
 }

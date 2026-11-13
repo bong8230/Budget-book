@@ -43,6 +43,7 @@ export default async function NewTransactionPage({ searchParams }: { searchParam
         categories={toOptions(categories ?? [])}
         paymentMethods={toPaymentOptions(methods ?? [])}
         action={createTransactionAction}
+        allowPlans={!item}
         initial={initial}
         hidden={item ? { back: "/recurring" } : day ? { back: "calendar" } : undefined}
       />

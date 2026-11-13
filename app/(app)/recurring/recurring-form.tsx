@@ -4,8 +4,9 @@ import { useActionState, useState } from "react";
 import Link from "next/link";
 import type { RecurringItem } from "@/lib/db/types";
 import type { CategoryOption, PaymentOption } from "@/components/transaction-form";
-import { Field, FormError, SubmitButton, inputClass } from "@/components/form-bits";
+import { Field, FormError, SubmitButton, inputClass, useGo } from "@/components/form-bits";
 import { saveRecurringAction } from "../actions";
+import { todayIso } from "@/components/format";
 
 const fmt = new Intl.NumberFormat("ko-KR");
 
@@ -13,8 +14,10 @@ type Props = { item?: RecurringItem; categories: CategoryOption[]; paymentMethod
 
 export function RecurringForm({ item, categories, paymentMethods }: Props) {
   const [state, action] = useActionState(saveRecurringAction, undefined);
+  useGo(state);
   const [type, setType] = useState<string>(item?.type ?? "expense");
   const [amount, setAmount] = useState(item ? fmt.format(Number(item.amount)) : "");
+  const [endMode, setEndMode] = useState(item?.end_date ? "date" : item?.max_count ? "count" : "none");
   const visible = type === "transfer" ? [] : categories.filter((c) => c.type === type);
 
   return (
@@ -38,16 +41,40 @@ export function RecurringForm({ item, categories, paymentMethods }: Props) {
             className={`${inputClass} tabular text-right`}
           />
         </Field>
-        <Field label="매달 며칠" htmlFor="rc-day">
-          <select id="rc-day" name="day" defaultValue={item?.day_of_month ?? 1} className={inputClass}>
-            {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-              <option key={d} value={d}>
-                {d === 31 ? "말일" : `${d}일`}
-              </option>
-            ))}
+        <Field label="주기" htmlFor="rc-frequency">
+          <select id="rc-frequency" name="frequency" defaultValue={item?.frequency ?? "monthly"} className={inputClass}>
+            <option value="weekly">매주</option>
+            <option value="monthly">매달</option>
+            <option value="yearly">매년</option>
           </select>
         </Field>
       </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="시작일" htmlFor="rc-start">
+          <input id="rc-start" name="startDate" type="date" required defaultValue={item?.start_date ?? todayIso()} className={inputClass} />
+        </Field>
+        <Field label="끝" htmlFor="rc-end-mode">
+          <select id="rc-end-mode" name="endMode" value={endMode} onChange={(e) => setEndMode(e.target.value)} className={inputClass}>
+            <option value="none">계속</option>
+            <option value="date">날짜까지</option>
+            <option value="count">횟수만큼</option>
+          </select>
+        </Field>
+      </div>
+      {endMode === "date" && (
+        <Field label="끝나는 날" htmlFor="rc-end-date">
+          <input id="rc-end-date" name="endDate" type="date" required defaultValue={item?.end_date ?? ""} className={inputClass} />
+        </Field>
+      )}
+      {endMode === "count" && (
+        <Field label="횟수" htmlFor="rc-max-count">
+          <input id="rc-max-count" name="maxCount" type="number" inputMode="numeric" min={1} max={600} required defaultValue={item?.max_count ?? 12} className={inputClass} />
+        </Field>
+      )}
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="autoCreate" defaultChecked={item ? item.auto_create : true} className="size-4 accent-[var(--accent)]" />
+        날짜가 되면 내역에 자동으로 등록
+      </label>
       <Field label="종류" htmlFor="rc-type">
         <select id="rc-type" name="type" value={type} onChange={(e) => setType(e.target.value)} className={inputClass}>
           <option value="expense">지출</option>

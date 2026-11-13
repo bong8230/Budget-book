@@ -3,11 +3,12 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import type { PaymentMethod } from "@/lib/db/types";
-import { Field, FormError, SubmitButton, inputClass } from "@/components/form-bits";
+import { Field, FormError, SubmitButton, inputClass, useGo } from "@/components/form-bits";
 import { savePaymentMethodAction } from "../../actions";
 
 export function PaymentMethodForm({ method, meId }: { method?: PaymentMethod; meId: string }) {
   const [state, action] = useActionState(savePaymentMethodAction, undefined);
+  useGo(state);
   return (
     <form action={action} className="space-y-3">
       {method && <input type="hidden" name="id" value={method.id} />}

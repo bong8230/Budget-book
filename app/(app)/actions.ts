@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { notifyLedger } from "@/lib/push/notify";
-import { formatSigned } from "@/components/format";
+import { formatSigned, todayIso } from "@/components/format";
 import { getAppContext } from "@/app/_lib/context";
 import {
   acceptImport,
@@ -14,12 +14,16 @@ import {
   addRule,
   addTransaction,
   archivePaymentMethod,
+  createInstallment,
   createInvite,
   deleteCategory,
+  deleteInstallment,
   deleteRecurring,
   deleteRule,
   deleteTransaction,
+  generateDueRecurring,
   ignoreImport,
+  listCategories,
   mergeImport,
   renameCategory,
   setDisplayName,
@@ -29,7 +33,8 @@ import {
   updateRule,
   updateTransaction,
 } from "@/lib/db/queries";
-import type { PaymentMethod, TransactionType } from "@/lib/db/types";
+import type { PaymentMethod, RecurringItem, TransactionType } from "@/lib/db/types";
+import { dueDates } from "@/lib/recurring";
 import type { FormState } from "@/components/transaction-form";
 
 const TYPES: TransactionType[] = ["income", "expense", "transfer"];
@@ -99,6 +104,63 @@ function notifyAdded(ctx: AppContext, t: { type: TransactionType; amount: number
   );
 }
 
+type TxValue = { type: TransactionType; amount: number; occurredOn: string; categoryId: string | null; paymentMethodId: string | null; memo: string };
+
+async function createInstallmentPlan(ctx: AppContext, v: TxValue, formData: FormData): Promise<FormState> {
+  const months = Number(formData.get("months"));
+  if (v.type !== "expense") return { error: "할부는 지출에만 쓸 수 있어요" };
+  if (!Number.isInteger(months) || months < 2 || months > 36) return { error: "할부 개월은 2~36개월로 골라주세요" };
+  if (v.amount < months) return { error: "금액이 할부 개월 수보다 커야 해요" };
+  const { error } = await createInstallment(ctx.db, {
+    ledgerId: ctx.ledger.id,
+    userId: ctx.user.id,
+    total: v.amount,
+    months,
+    firstDate: v.occurredOn,
+    categoryId: v.categoryId,
+    paymentMethodId: v.paymentMethodId,
+    memo: v.memo,
+  });
+  if (error) return { error: "저장하지 못했어요. 다시 시도해주세요" };
+  notifyAdded(ctx, { ...v, memo: `${v.memo ? `${v.memo} · ` : ""}${months}개월 할부` });
+  refreshAll();
+  redirect("/recurring?saved=installment");
+}
+
+async function createRepeat(ctx: AppContext, v: TxValue, formData: FormData): Promise<FormState> {
+  const frequency = String(formData.get("frequency"));
+  if (frequency !== "weekly" && frequency !== "monthly" && frequency !== "yearly") return { error: "반복 주기를 골라주세요" };
+  const endMode = String(formData.get("endMode") ?? "none");
+  const endDate = endMode === "date" ? String(formData.get("endDate") ?? "") : null;
+  const maxCount = endMode === "count" ? Number(formData.get("maxCount")) : null;
+  if (endDate !== null && (!isRealDate(endDate) || endDate < v.occurredOn)) return { error: "끝나는 날은 시작일 뒤로 정해주세요" };
+  if (maxCount !== null && (!Number.isInteger(maxCount) || maxCount < 1 || maxCount > 600)) return { error: "횟수는 1~600 사이로 정해주세요" };
+  const category = v.categoryId ? (await listCategories(ctx.db, ctx.ledger.id)).data?.find((c) => c.id === v.categoryId)?.name : null;
+  const name = (v.memo || category || (v.type === "income" ? "반복 수입" : "반복 지출")).slice(0, 40);
+  const { error } = await addRecurring(ctx.db, {
+    ledger_id: ctx.ledger.id,
+    name,
+    keyword: name,
+    type: v.type,
+    amount: v.amount,
+    day_of_month: Number(v.occurredOn.slice(8)),
+    category_id: v.categoryId,
+    payment_method_id: v.paymentMethodId,
+    active: true,
+    frequency,
+    start_date: v.occurredOn,
+    end_date: endDate,
+    max_count: maxCount,
+    auto_create: true,
+  });
+  if (error) return { error: "저장하지 못했어요. 다시 시도해주세요" };
+  // 시작일이 오늘 이전이면 지난 회차를 바로 만든다
+  const { data: created } = await generateDueRecurring(ctx.db, ctx.ledger.id);
+  if (created && created.length > 0) notifyAdded(ctx, v);
+  refreshAll();
+  redirect("/recurring?saved=repeat");
+}
+
 function refreshAll() {
   revalidatePath("/", "layout");
 }
@@ -110,6 +172,9 @@ export async function createTransactionAction(_: FormState, formData: FormData):
   if ("error" in parsed) return { error: parsed.error };
   const ctx = await getAppContext();
   const v = parsed.value;
+  const plan = String(formData.get("plan") ?? "once");
+  if (plan === "installment") return createInstallmentPlan(ctx, v, formData);
+  if (plan === "repeat") return createRepeat(ctx, v, formData);
   const { error } = await addTransaction(ctx.db, {
     ledger_id: ctx.ledger.id,
     type: v.type,
@@ -340,7 +405,7 @@ export async function savePaymentMethodAction(_: FormState, formData: FormData):
   if (error) return { error: "저장하지 못했어요" };
   refreshAll();
   // 추가는 같은 화면에 머문다 (같은 주소로 redirect 하면 저장 중 상태가 멈추는 경우가 있다). 수정은 ?edit= 에서 목록으로
-  if (id) redirect("/settings/payment-methods");
+  if (id) return { go: "/settings/payment-methods" };
   return undefined;
 }
 
@@ -351,6 +416,16 @@ export async function archivePaymentMethodAction(formData: FormData) {
   if (error) redirect("/settings/payment-methods?error=archive");
   refreshAll();
   redirect("/settings/payment-methods");
+}
+
+export async function deleteInstallmentAction(formData: FormData) {
+  const id = requiredId(formData, "id");
+  const { db, ledger } = await getAppContext();
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const { error } = await deleteInstallment(db, ledger.id, id, today);
+  if (error) redirect("/recurring?error=installment");
+  refreshAll();
+  redirect("/recurring");
 }
 
 /* ───────── 카테고리 ───────── */
@@ -372,7 +447,7 @@ export async function saveCategoryAction(_: FormState, formData: FormData): Prom
   }
   refreshAll();
   // 추가는 같은 화면에 머문다. 수정은 ?edit= 에서 목록으로
-  if (id) redirect(`/settings/categories?type=${type === "income" ? "income" : "expense"}`);
+  if (id) return { go: `/settings/categories?type=${type === "income" ? "income" : "expense"}` };
   return undefined;
 }
 
@@ -426,27 +501,57 @@ export async function saveRecurringAction(_: FormState, formData: FormData): Pro
   const keyword = str(formData, "keyword", 40) || name;
   const type = String(formData.get("type")) as TransactionType;
   const amount = parseAmount(String(formData.get("amount") ?? ""));
-  const day = Number(formData.get("day"));
+  const frequency = String(formData.get("frequency") ?? "monthly");
+  const startDate = String(formData.get("startDate") ?? "");
+  const endMode = String(formData.get("endMode") ?? "none");
+  const endDate = endMode === "date" ? String(formData.get("endDate") ?? "") : null;
+  const maxCount = endMode === "count" ? Number(formData.get("maxCount")) : null;
+  const autoCreate = formData.get("autoCreate") === "on";
   if (!name) return { error: "이름을 입력해주세요" };
   if (!TYPES.includes(type)) return { error: "종류를 골라주세요" };
   if (!amount) return { error: "금액을 입력해주세요" };
-  if (!Number.isInteger(day) || day < 1 || day > 31) return { error: "날짜는 1~31일 사이로 정해주세요" };
+  if (frequency !== "weekly" && frequency !== "monthly" && frequency !== "yearly") return { error: "주기를 골라주세요" };
+  if (!isRealDate(startDate)) return { error: "시작일을 확인해주세요" };
+  if (endDate !== null && (!isRealDate(endDate) || endDate < startDate)) return { error: "끝나는 날은 시작일 뒤로 정해주세요" };
+  if (maxCount !== null && (!Number.isInteger(maxCount) || maxCount < 1 || maxCount > 600)) return { error: "횟수는 1~600 사이로 정해주세요" };
 
   const ctx = await getAppContext();
+  // 수동이던 항목에 자동 등록을 새로 켜면, 이미 손으로 넣었을 지난 회차를 다시 만들지 않도록 오늘부터 시작한다
+  let start = startDate;
+  let count = maxCount;
+  if (id && autoCreate && startDate < todayIso()) {
+    const { data: before } = await ctx.db.from("recurring_items").select("auto_create").eq("id", id).maybeSingle<{ auto_create: boolean }>();
+    if (before && !before.auto_create) {
+      const schedule = { frequency, start_date: startDate, day_of_month: Number(startDate.slice(8)), end_date: endDate, max_count: null } as RecurringItem;
+      const today = todayIso();
+      const yesterday = new Date(`${today}T00:00:00Z`);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+      const past = dueDates(schedule, startDate, yesterday.toISOString().slice(0, 10)).length;
+      const next = dueDates(schedule, today, `${Number(today.slice(0, 4)) + 2}${today.slice(4)}`)[0];
+      if (next) start = next;
+      if (count !== null) count = Math.max(1, count - past);
+    }
+  }
   const values = {
     name,
     keyword,
     type,
     amount,
-    day_of_month: day,
+    day_of_month: Number(startDate.slice(8)),
     category_id: type === "transfer" ? null : optionalId(formData, "categoryId"),
     payment_method_id: optionalId(formData, "paymentMethodId"),
     active: true,
+    frequency: frequency as "weekly" | "monthly" | "yearly",
+    start_date: start,
+    end_date: endDate,
+    max_count: count,
+    auto_create: autoCreate,
   };
   const { error } = id ? await updateRecurring(ctx.db, id, values) : await addRecurring(ctx.db, { ledger_id: ctx.ledger.id, ...values });
   if (error) return { error: "저장하지 못했어요" };
+  if (autoCreate) await generateDueRecurring(ctx.db, ctx.ledger.id);
   refreshAll();
-  if (id) redirect("/recurring");
+  if (id) return { go: "/recurring" };
   return undefined;
 }
 

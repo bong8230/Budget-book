@@ -3,11 +3,12 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import type { Category } from "@/lib/db/types";
-import { Field, FormError, SubmitButton, inputClass } from "@/components/form-bits";
+import { Field, FormError, SubmitButton, inputClass, useGo } from "@/components/form-bits";
 import { saveCategoryAction } from "../../actions";
 
 export function CategoryForm({ category, type }: { category?: Category; type: Category["type"] }) {
   const [state, action] = useActionState(saveCategoryAction, undefined);
+  useGo(state);
   return (
     <form action={action} className="space-y-3">
       {category ? <input type="hidden" name="id" value={category.id} /> : <input type="hidden" name="type" value={type} />}

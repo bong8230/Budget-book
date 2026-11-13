@@ -200,7 +200,8 @@ test("고정지출을 등록하면 홈에 '이번 달 나갈 돈'으로 보인�
   await page.goto("/recurring");
   await page.getByLabel("이름").fill("넷플릭스");
   await page.getByLabel("금액").fill("17000");
-  await page.getByLabel("매달 며칠").selectOption("28");
+  await page.getByLabel("시작일").fill(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-28`);
+  await page.getByLabel("날짜가 되면 내역에 자동으로 등록").uncheck();
   await page.getByRole("button", { name: "추가", exact: true }).click();
   await expect(page.getByRole("link", { name: "넷플릭스" })).toBeVisible();
 
@@ -300,6 +301,45 @@ test("같은 결제가 문자와 앱 알림으로 오면 하나로 합친다", a
   });
   expect(res.status(), await res.text()).toBe(201);
   expect(((await res.json()) as { status: string }).status).toBe("duplicate");
+});
+
+test("할부는 매달 나눠 들어가고, 반복은 지난 회차까지 자동 등록된다", async ({ page, context, baseURL }) => {
+  await signIn(context, alice, baseURL!);
+  // 30만 원 3개월 할부
+  await page.goto("/transactions/new");
+  await typeAmount(page, "300000");
+  await page.getByRole("radiogroup", { name: "결제 방식" }).getByRole("radio", { name: "할부" }).click();
+  await page.getByLabel("할부 개월").selectOption("3");
+  await expect(page.getByText("매달 100,000원 × 3개월")).toBeVisible();
+  await page.getByLabel("메모").fill("E2E냉장고");
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(page).toHaveURL(/\/recurring/);
+  const plan = page.getByRole("region", { name: "할부" }).getByRole("listitem").filter({ hasText: "E2E냉장고" });
+  await expect(plan).toContainText("1/3회");
+  await expect(plan).toContainText("200,000원");
+
+  await page.goto("/transactions");
+  await expect(page.getByRole("link", { name: /E2E냉장고 \(1\/3\)/ })).toContainText("-100,000원");
+
+  // 2주 전부터 매주 반복 → 지난 회차 3번(2주 전, 1주 전, 오늘)이 바로 등록된다
+  const start = new Date(Date.now() + 9 * 3600_000 - 14 * 86400_000).toISOString().slice(0, 10);
+  await page.goto("/transactions/new");
+  await typeAmount(page, "4500");
+  await page.getByRole("radiogroup", { name: "결제 방식" }).getByRole("radio", { name: "반복" }).click();
+  await page.getByLabel("반복").selectOption("weekly");
+  await page.getByLabel("시작일").fill(start);
+  await page.getByLabel("메모").fill("E2E주간커피");
+  await page.getByRole("button", { name: "저장" }).click();
+  await expect(page).toHaveURL(/\/recurring/);
+  await expect(page.getByRole("link", { name: "E2E주간커피" }).first()).toBeVisible();
+  const res = await page.request.get("/api/export?format=csv");
+  expect((await res.text()).split("\n").filter((line) => line.includes("E2E주간커피"))).toHaveLength(3);
+
+  // 남은 할부 지우기
+  await page.goto("/recurring");
+  page.once("dialog", (d) => d.accept());
+  await plan.getByRole("button", { name: "삭제" }).click();
+  await expect(plan).toHaveCount(0);
 });
 
 test("카테고리를 추가하고 이름을 바꾸고 지울 수 있다", async ({ page, context, baseURL }) => {
