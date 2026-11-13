@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   if (limitError) return NextResponse.json({ error: 'Unable to check rate limit' }, { status: 503 });
   if (!allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': '60' } });
   await db.from('device_tokens').update({ last_used_at: new Date().toISOString() }).eq('token_hash', hash).is('revoked_at', null);
-  let body: { text?: unknown; source?: unknown; received_at?: unknown };
+  let body: { text?: unknown; source?: unknown; received_at?: unknown; app?: unknown };
   const maxBytes = 48_000;
   const size = Number(request.headers.get('content-length') ?? 0);
   if (size > maxBytes) return NextResponse.json({ error: 'Request too large' }, { status: 413 });
@@ -36,23 +36,26 @@ export async function POST(request: Request) {
   } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
   if (!body || typeof body !== 'object' || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 10000 || !['sms', 'notification', 'manual'].includes(String(body.source))) return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
   if (body.received_at !== undefined && (typeof body.received_at !== 'string' || Number.isNaN(Date.parse(body.received_at)))) return NextResponse.json({ error: 'Invalid received_at' }, { status: 400 });
-  const parsed = parseNotification(body.text, body.received_at ? new Date(body.received_at as string) : new Date());
+  if (body.app !== undefined && (typeof body.app !== 'string' || body.app.length > 200)) return NextResponse.json({ error: 'Invalid app' }, { status: 400 });
+  const receivedAt = body.received_at ? new Date(body.received_at as string) : new Date();
+  const parsed = parseNotification(body.text, receivedAt);
   if (!/입금|출금|결제|승인|사용|취소/.test(body.text)) return NextResponse.json({ status: 'skipped' }, { status: 201 });
   const [{ data: methods, error: methodsError }, { data: rules, error: rulesError }] = await Promise.all([
     db.from('payment_methods').select('*').eq('ledger_id', device.ledger_id).is('archived_at', null).order('created_at').order('id'),
     db.from('rules').select('*').eq('ledger_id', device.ledger_id).order('created_at').order('id'),
   ]);
   if (methodsError || rulesError) return NextResponse.json({ error: 'Unable to load import rules' }, { status: 500 });
-  const method = matchPaymentMethod(body.text, methods ?? []);
-  const rule = matchRule(body.text, parsed.merchant, rules ?? []);
-  const type = classifyTransfer(body.text, rule?.set_type ?? parsed.type);
+  const matchingText = `${typeof body.app === 'string' ? body.app : ''}\n${body.text}`;
+  const method = matchPaymentMethod(matchingText, methods ?? []);
+  const rule = matchRule(matchingText, parsed.merchant, rules ?? []);
+  const type = /취소/.test(body.text) ? null : classifyTransfer(body.text, rule?.set_type ?? parsed.type);
   const { data: status, error: insertError } = await db.rpc('ingest_import', {
     target_ledger: device.ledger_id, target_owner: device.owner_id, source_value: body.source,
-    raw_value: body.text, hash_value: dedupeHash(body.text), amount_value: parsed.amount,
+    raw_value: body.text, hash_value: dedupeHash(JSON.stringify([body.text, body.source, receivedAt.toISOString()])), amount_value: parsed.amount,
     date_value: parsed.occurred_on, merchant_value: parsed.merchant, type_value: type,
     category_value: type === 'transfer' ? null : rule?.category_id ?? null,
     payment_value: rule?.payment_method_id ?? method?.id ?? null, rule_value: rule?.id ?? null,
-    auto_value: Boolean(rule?.auto_accept) && !/취소/.test(body.text),
+    auto_value: Boolean(rule?.auto_accept) && !/취소/.test(body.text), received_value: receivedAt.toISOString(), app_value: typeof body.app === 'string' ? body.app : null,
   });
   if (insertError) return NextResponse.json({ error: 'Unable to save import' }, { status: 500 });
   if (status === 'accepted') {

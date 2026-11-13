@@ -8,7 +8,7 @@ const bob = '00000000-0000-0000-0000-000000000002';
 let ledger: string;
 beforeAll(async () => {
   await db.exec(`create role authenticated; create role anon; create role service_role; create schema auth; create table auth.users(id uuid primary key,email text); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; grant usage on schema public,auth to authenticated,service_role; grant execute on function auth.uid() to authenticated,service_role; alter default privileges in schema public grant all on tables to authenticated,service_role; alter default privileges in schema public grant execute on functions to anon,authenticated,service_role; create publication supabase_realtime;`);
-  for (const name of ['20261111000000_initial.sql','20261111000001_member_names_categories.sql','20261113000000_phase2.sql','20261113000001_operations.sql','20261113000002_ai_usage.sql','20261113000003_ai_hardening.sql','20261113000004_function_privileges.sql']) {
+  for (const name of ['20261111000000_initial.sql','20261111000001_member_names_categories.sql','20261113000000_phase2.sql','20261113000001_operations.sql','20261113000002_ai_usage.sql','20261113000003_ai_hardening.sql','20261113000004_function_privileges.sql','20261113000005_import_event_dedupe.sql']) {
     const sql = await readFile(`supabase/migrations/${name}`, 'utf8');
     await db.exec(sql.replace('create extension if not exists pgcrypto with schema extensions;', ''));
   }
@@ -51,6 +51,25 @@ describe('phase 2 migration and RLS', () => {
     expect((await db.query<{status:string}>(sql,args)).rows[0].status).toBe('pending');
     expect((await db.query<{status:string}>(sql,args)).rows[0].status).toBe('duplicate');
     await db.exec(`reset role; set role authenticated; select set_config('request.jwt.claim.sub','${alice}',false);`);
+  });
+  it('deduplicates corresponding SMS and app notifications within 10 minutes only', async () => {
+    await db.exec('reset role');
+    await db.query("insert into public.ledger_members(ledger_id,user_id,role) values($1,$2,'member')", [ledger,bob]);
+    await db.exec('set role service_role');
+    const sql = 'select public.ingest_import($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) status';
+    const args = (source: string, hash: string, at: string, merchant: string|null = '스타벅스', owner = alice, amount: number|null = 9371) => [ledger,owner,source,`알림 ${hash}`,hash,amount,'2025-05-01',merchant,'expense',null,null,null,false,at,null];
+    expect((await db.query<{status:string}>(sql,args('sms','event-1','2025-05-01T03:00:00Z'))).rows[0].status).toBe('pending');
+    expect((await db.query<{status:string}>(sql,args('sms','event-same-channel','2025-05-01T03:00:30Z'))).rows[0].status).toBe('pending');
+    expect((await db.query<{status:string}>(sql,args('notification','event-2','2025-05-01T03:09:00Z'))).rows[0].status).toBe('duplicate');
+    expect((await db.query<{status:string}>(sql,args('notification','event-boundary','2025-05-01T03:10:00Z'))).rows[0].status).toBe('duplicate');
+    expect((await db.query<{status:string}>(sql,args('notification','event-3','2025-05-01T03:09:00Z','다른상점'))).rows[0].status).toBe('pending');
+    expect((await db.query<{status:string}>(sql,args('notification','event-4','2025-05-01T03:11:00Z'))).rows[0].status).toBe('pending');
+    expect((await db.query<{status:string}>(sql,args('notification','event-owner','2025-05-01T03:05:00Z','스타벅스',bob))).rows[0].status).toBe('pending');
+    expect((await db.query<{status:string}>(sql,args('sms','event-5','2025-05-01T03:02:00Z','스타벅스',alice,null))).rows[0].status).toBe('pending');
+    await db.exec('reset role');
+    await db.query('delete from public.imports where owner_id=$1',[bob]);
+    await db.query('delete from public.ledger_members where user_id=$1 and ledger_id=$2',[bob,ledger]);
+    await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub','${alice}',false);`);
   });
   it('only allows the import owner to resolve it', async () => {
     await db.exec('reset role');
