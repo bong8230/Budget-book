@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { parseNotification } from '@/lib/import/parse';
-import { dedupeHash } from '@/lib/import/dedupe';
+import { importHash } from '@/lib/import/dedupe';
 import { notifyUsers } from '@/lib/push/notify';
 import { classifyTransfer, matchPaymentMethod, matchRule } from '@/lib/rules/match';
 export const runtime = 'nodejs';
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   const type = /취소/.test(body.text) ? null : classifyTransfer(body.text, rule?.set_type ?? parsed.type);
   const { data: status, error: insertError } = await db.rpc('ingest_import', {
     target_ledger: device.ledger_id, target_owner: device.owner_id, source_value: body.source,
-    raw_value: body.text, hash_value: dedupeHash(JSON.stringify([body.text, body.source, receivedAt.toISOString()])), amount_value: parsed.amount,
+    raw_value: body.text, hash_value: importHash(body.text, String(body.source), body.received_at === undefined ? undefined : receivedAt.toISOString()), amount_value: parsed.amount,
     date_value: parsed.occurred_on, merchant_value: parsed.merchant, type_value: type,
     category_value: type === 'transfer' ? null : rule?.category_id ?? null,
     payment_value: rule?.payment_method_id ?? method?.id ?? null, rule_value: rule?.id ?? null,
