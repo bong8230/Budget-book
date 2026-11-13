@@ -8,7 +8,7 @@ const bob = '00000000-0000-0000-0000-000000000002';
 let ledger: string;
 beforeAll(async () => {
   await db.exec(`create role authenticated; create role anon; create role service_role; create schema auth; create table auth.users(id uuid primary key,email text); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; grant usage on schema public,auth to authenticated,service_role; grant execute on function auth.uid() to authenticated,service_role; alter default privileges in schema public grant all on tables to authenticated,service_role; alter default privileges in schema public grant execute on functions to authenticated,service_role; create publication supabase_realtime;`);
-  for (const name of ['20261111000000_initial.sql','20261111000001_member_names_categories.sql','20261113000000_phase2.sql','20261113000001_operations.sql','20261113000002_ai_usage.sql']) {
+  for (const name of ['20261111000000_initial.sql','20261111000001_member_names_categories.sql','20261113000000_phase2.sql','20261113000001_operations.sql','20261113000002_ai_usage.sql','20261113000003_ai_hardening.sql']) {
     const sql = await readFile(`supabase/migrations/${name}`, 'utf8');
     await db.exec(sql.replace('create extension if not exists pgcrypto with schema extensions;', ''));
   }
@@ -34,7 +34,7 @@ describe('phase 2 migration and RLS', () => {
     await expect(db.query('select public.merge_import($1,$2)', [imp,tx])).rejects.toThrow();
     await db.exec(`select set_config('request.jwt.claim.sub','${alice}',false);`);
     await db.query('select public.merge_import($1,$2)', [imp,tx]);
-    expect((await db.query<{merchant:string}>('select merchant from public.transactions where id=$1',[tx])).rows[0].merchant).toBe('가게');
+    expect((await db.query<{merchant:string;source:string}>('select merchant,source from public.transactions where id=$1',[tx])).rows[0]).toEqual({ merchant: '가게', source: 'import' });
     await expect(db.query('select public.merge_import($1,$2)', [imp,tx])).rejects.toThrow();
   });
   it('only lets service role ingest and identifies a duplicate', async () => {
@@ -54,6 +54,7 @@ describe('phase 2 migration and RLS', () => {
     await db.exec(`select set_config('request.jwt.claim.sub','${alice}',false);`);
     const result = await db.query<{id:string}>("select public.resolve_import($1,'accept') id",[id]);
     expect(result.rows[0].id).toBeTruthy();
+    expect((await db.query<{source:string}>('select source from public.transactions where id=$1',[result.rows[0].id])).rows[0].source).toBe('import');
     await expect(db.query("select public.resolve_import($1,'accept')",[id])).rejects.toThrow();
   });
   it('auto-accepts complete imports exactly once', async () => {
@@ -63,7 +64,19 @@ describe('phase 2 migration and RLS', () => {
     expect((await db.query<{status:string}>(sql,args)).rows[0].status).toBe('accepted');
     expect((await db.query<{status:string}>(sql,args)).rows[0].status).toBe('duplicate');
     await db.exec(`reset role; set role authenticated; select set_config('request.jwt.claim.sub','${alice}',false);`);
-    expect((await db.query("select id from public.transactions where amount=2000")).rows).toHaveLength(1);
+    expect((await db.query<{source:string}>("select source from public.transactions where amount=2000")).rows).toEqual([{source:'import'}]);
+  });
+  it('AI query aggregates all visible rows but returns at most 100', async () => {
+    await db.exec('reset role');
+    await db.query("insert into public.transactions(ledger_id,type,amount,occurred_on,created_by,memo) select $1,'expense',10,'2020-01-01',$2,'테스트' from generate_series(1,115)",[ledger,alice]);
+    await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub','${alice}',false);`);
+    const sql = "select * from public.ai_query_transactions($1,'2020-01-01','2020-01-01',null,null,'테스트')";
+    const result = (await db.query<{count:number;expense:number;rows:unknown[]}>(sql,[ledger])).rows[0];
+    expect(Number(result.count)).toBe(115); expect(Number(result.expense)).toBe(1150); expect(result.rows).toHaveLength(100);
+    await db.exec(`select set_config('request.jwt.claim.sub','${bob}',false);`);
+    const hidden = (await db.query<{count:number;rows:unknown[]}>(sql,[ledger])).rows[0];
+    expect(Number(hidden.count)).toBe(0); expect(hidden.rows).toHaveLength(0);
+    await db.exec(`select set_config('request.jwt.claim.sub','${alice}',false);`);
   });
   it('limits each device to 30 requests per window', async () => {
     await db.exec('reset role');
@@ -104,8 +117,16 @@ describe('phase 2 migration and RLS', () => {
     expect((await db.query<{id:string|null}>('select public.reserve_ai_budget($1,$2,301,99999) id',[aiLedger,alice])).rows[0].id).toBeNull();
     await expect(db.query('select public.settle_ai_usage($1,$2,10,20,2)',[id,bob])).rejects.toThrow();
     await db.query('select public.settle_ai_usage($1,$2,10,20,2)',[id,alice]);
-    await expect(db.query('select public.settle_ai_usage($1,$2,10,20,2)',[id,alice])).rejects.toThrow();
+    await expect(db.query('select public.settle_ai_usage($1,$2,10,20,2)',[id,alice])).resolves.toBeDefined();
+    await expect(db.query('select public.settle_ai_usage($1,$2,10,20,3)',[id,alice])).rejects.toThrow();
+    const stale = await db.query<{id:string}>('select public.reserve_ai_budget($1,$2,500,99999) id',[aiLedger,alice]);
+    await db.exec('reset role');
+    await db.query("update public.ai_usage set created_at=now()-interval '1 hour' where id=$1",[stale.rows[0].id]);
+    await db.exec('set role service_role');
+    expect((await db.query<{id:string|null}>('select public.reserve_ai_budget($1,$2,299,99999) id',[aiLedger,alice])).rows[0].id).toBeNull();
     await db.exec(`reset role; set role authenticated; select set_config('request.jwt.claim.sub','${alice}',false);`);
+    const summary = (await db.query<{spent_krw:string; reserved_krw:string}>("select * from public.ai_usage_summary($1,date_trunc('month',now() at time zone 'Asia/Seoul')::date)",[aiLedger])).rows[0];
+    expect(Number(summary.spent_krw)).toBe(2); expect(Number(summary.reserved_krw)).toBe(500);
   });
   it('preserves shared transactions anonymously when a member leaves', async () => {
     await db.exec('reset role');

@@ -4,7 +4,7 @@ import { recurringStatus, recurringSuggestions } from '@/lib/recurring';
 import { monthlyTotals, categoryBreakdown, categoryChange } from '@/lib/report';
 import type { PaymentMethod, RecurringItem, Rule, Transaction } from '@/lib/db/types';
 
-const tx = (id: string, date: string, amount: number, type: Transaction['type'] = 'expense'): Transaction => ({ id, ledger_id:'l', type, amount, occurred_on:date, category_id:'c', payment_method_id:null, merchant:'넷플릭스', memo:'', created_by:'u', created_at:'', updated_at:'' });
+const tx = (id: string, date: string, amount: number, type: Transaction['type'] = 'expense'): Transaction => ({ id, ledger_id:'l', type, amount, occurred_on:date, category_id:'c', payment_method_id:null, merchant:'넷플릭스', memo:'', created_by:'u', source:'manual', created_at:'', updated_at:'' });
 describe('phase 2 calculations', () => {
   it('matches earliest rule and excludes archived payment methods', () => {
     const rules = [{id:'b',created_at:'2026-02',keyword:'카페'}, {id:'a',created_at:'2026-01',keyword:'카페'}] as Rule[];

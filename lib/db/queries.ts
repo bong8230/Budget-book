@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Category, TransactionType, PaymentMethod, Rule, RecurringItem } from '@/lib/db/types';
+import type { Category, TransactionType, Transaction, PaymentMethod, Rule, RecurringItem } from '@/lib/db/types';
 import { recurringStatus, recurringSuggestions } from '@/lib/recurring';
 export async function listLedgers(db: SupabaseClient) { return db.from('ledgers').select('*').order('created_at'); }
 export async function getMyLedger(db: SupabaseClient) { return db.from('ledgers').select('*').order('created_at').limit(1).maybeSingle(); }
@@ -12,9 +12,9 @@ export async function listTransactions(db: SupabaseClient, ledgerId: string, mon
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('Expected YYYY-MM');
   const [year, m] = month.split('-').map(Number);
   const next = m === 12 ? `${year + 1}-01-01` : `${year}-${String(m + 1).padStart(2, '0')}-01`;
-  return db.from('transactions').select('*').eq('ledger_id', ledgerId).gte('occurred_on', `${month}-01`).lt('occurred_on', next).order('occurred_on', { ascending: false });
+  return listTransactionsBetween(db, ledgerId, `${month}-01`, next);
 }
-export async function addTransaction(db: SupabaseClient, input: { ledger_id: string; type: TransactionType; amount: number; occurred_on: string; category_id?: string | null; payment_method_id?: string | null; merchant?: string | null; memo?: string; created_by: string }) { return db.from('transactions').insert(input).select().single(); }
+export async function addTransaction(db: SupabaseClient, input: { ledger_id: string; type: TransactionType; amount: number; occurred_on: string; category_id?: string | null; payment_method_id?: string | null; merchant?: string | null; memo?: string; source?: Transaction['source']; created_by: string }) { return db.from('transactions').insert(input).select().single(); }
 export async function updateTransaction(db: SupabaseClient, id: string, changes: Partial<Pick<Parameters<typeof addTransaction>[1], 'type' | 'amount' | 'occurred_on' | 'category_id' | 'payment_method_id' | 'merchant' | 'memo'>>) { return db.from('transactions').update(changes).eq('id', id).select().single(); }
 export async function deleteTransaction(db: SupabaseClient, id: string) { return db.from('transactions').delete().eq('id', id); }
 export async function listCategories(db: SupabaseClient, ledgerId: string) { return db.from('categories').select('*').eq('ledger_id', ledgerId).order('name'); }
@@ -51,7 +51,20 @@ export async function listTransactionsRange(db: SupabaseClient, ledgerId: string
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(fromMonth) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(toMonth) || fromMonth > toMonth) throw new Error('Expected ordered YYYY-MM range');
   const [year, month] = toMonth.split('-').map(Number);
   const end = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`;
-  return db.from('transactions').select('*').eq('ledger_id', ledgerId).gte('occurred_on', `${fromMonth}-01`).lt('occurred_on', end).order('occurred_on', { ascending: false });
+  return listTransactionsBetween(db, ledgerId, `${fromMonth}-01`, end);
+}
+async function listTransactionsBetween(db: SupabaseClient, ledgerId: string, from: string, end: string) {
+  const all: Transaction[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await db.from('transactions').select('*').eq('ledger_id', ledgerId).gte('occurred_on', from).lt('occurred_on', end).order('occurred_on', { ascending: false }).order('id', { ascending: false }).range(offset, offset + 999);
+    if (error) return { data: null, error };
+    all.push(...(data ?? []) as Transaction[]);
+    if (!data || data.length < 1000) return { data: all, error: null };
+  }
+}
+export type AiTransactionQuery = { from: string; to: string; type?: TransactionType | null; categoryId?: string | null; keyword?: string | null };
+export async function aiQueryTransactions(db: SupabaseClient, ledgerId: string, input: AiTransactionQuery) {
+  return db.rpc('ai_query_transactions', { target_ledger: ledgerId, from_date: input.from, to_date: input.to, type_filter: input.type ?? null, category_filter: input.categoryId ?? null, keyword: input.keyword ?? null }).single();
 }
 export async function getRecurringStatus(db: SupabaseClient, ledgerId: string, month: string) {
   const [items, transactions] = await Promise.all([listRecurring(db, ledgerId), listTransactions(db, ledgerId, month)]);

@@ -20,6 +20,32 @@ import { notifyLedger } from "@/lib/push/notify";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+const MAX_BODY_BYTES = 32_000;
+
+/** 본문을 끝까지 읽기 전에 크기를 제한한다 */
+async function readJsonLimited(request: Request): Promise<unknown | "too_large" | "invalid"> {
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) return "too_large";
+  const reader = request.body?.getReader();
+  if (!reader) return "invalid";
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_BODY_BYTES) {
+      await reader.cancel();
+      return "too_large";
+    }
+    chunks.push(value);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    return "invalid";
+  }
+}
+
 function seoulToday() {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   return parts; // YYYY-MM-DD
@@ -71,6 +97,15 @@ export async function GET() {
   );
 }
 
+/** 정산은 한 번 재시도하고, 그래도 실패하면 예외 */
+async function settleOrThrow(run: () => PromiseLike<{ error: unknown }>) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { error } = await run();
+    if (!error) return;
+    if (attempt === 1) throw error;
+  }
+}
+
 function readHistory(body: unknown): ChatTurn[] | null {
   if (!body || typeof body !== "object" || !Array.isArray((body as { messages?: unknown }).messages)) return null;
   const raw = (body as { messages: unknown[] }).messages.slice(-10);
@@ -92,12 +127,9 @@ export async function POST(request: Request) {
   const ctx = await loadContext();
   if ("error" in ctx) return ctx.error;
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
+  const body = await readJsonLimited(request);
+  if (body === "too_large") return NextResponse.json({ error: "Request too large" }, { status: 413 });
+  if (body === "invalid") return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   const history = readHistory(body);
   if (!history) return NextResponse.json({ error: "Invalid messages" }, { status: 400 });
 
@@ -115,11 +147,16 @@ export async function POST(request: Request) {
       return error || typeof data !== "string" ? null : data;
     },
     async settle(id, u) {
-      await settleAiUsage(admin, id, ctx.user.id, u.input + u.cacheCreation + u.cacheRead, u.output, costKrw(u));
+      await settleOrThrow(() => settleAiUsage(admin, id, ctx.user.id, u.input + u.cacheCreation + u.cacheRead, u.output, costKrw(u)));
+    },
+    async settleKrw(id, krw) {
+      await settleOrThrow(() => settleAiUsage(admin, id, ctx.user.id, 0, 0, krw));
     },
   };
 
-  const result = await askAssistant(
+  let result: Awaited<ReturnType<typeof askAssistant>>;
+  try {
+    result = await askAssistant(
     {
       db: ctx.db,
       ledgerId: ctx.ledger.id,
@@ -131,6 +168,11 @@ export async function POST(request: Request) {
     history,
     meter,
   );
+  } catch (err) {
+    // 정산을 기록하지 못하면 예약이 그대로 남아(만료 후에도 사용액으로 계산) 한도는 지켜진다
+    console.error("ai settle failed", err);
+    return NextResponse.json({ error: "settle_failed", reply: "사용량을 기록하지 못해 멈췄어요. 잠시 후 다시 시도해주세요." }, { status: 503 });
+  }
 
   if (result.added.length > 0) {
     const { data: me } = await ctx.db.from("ledger_members").select("display_name").eq("ledger_id", ctx.ledger.id).eq("user_id", ctx.user.id).maybeSingle();
@@ -155,6 +197,7 @@ export async function POST(request: Request) {
       reason: result.ok ? undefined : result.reason,
       reply: result.reply,
       added: result.added,
+      drafts: result.drafts,
       usage: { capKrw: ctx.cap, spentKrw: usage.spentKrw },
     },
     { headers: { "Cache-Control": "no-store" } },

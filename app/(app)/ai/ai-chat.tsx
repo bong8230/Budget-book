@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatSigned, formatWon } from "@/components/format";
-import { undoTransactionAction } from "../actions";
+import { confirmAiDraftAction, undoTransactionAction } from "../actions";
 
 type Added = {
   id: string;
@@ -15,7 +15,8 @@ type Added = {
   paymentMethodName: string | null;
   memo: string;
 };
-type Turn = { role: "user" | "assistant"; text: string; added?: Added[] };
+type Draft = Omit<Added, "id"> & { categoryId: string | null; paymentMethodId: string | null };
+type Turn = { role: "user" | "assistant"; text: string; added?: Added[]; drafts?: Draft[] };
 type Status = { enabled: boolean; hasBudget: boolean; capKrw: number; spentKrw: number; remainingKrw: number };
 
 const EXAMPLES = ["13일 마트에서 카드로 3000원 썼어", "이번 달 식비 얼마 썼어?", "지난달보다 많이 쓴 카테고리는?", "이번 주 카페에 쓴 돈 알려줘"];
@@ -28,6 +29,8 @@ export function AiChat() {
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [undone, setUndone] = useState<Set<string>>(new Set());
+  /** 확인 카드 처리 결과: "turn-index:draft-index" → 저장된 거래 id 또는 "skip" */
+  const [draftState, setDraftState] = useState<Record<string, string>>({});
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,9 +62,10 @@ export function AiChat() {
         reply?: string;
         error?: string;
         added?: Added[];
+        drafts?: Draft[];
         usage?: { capKrw: number; spentKrw: number };
       };
-      if (data.reply) setTurns([...next, { role: "assistant", text: data.reply, added: data.added }]);
+      if (data.reply) setTurns([...next, { role: "assistant", text: data.reply, added: data.added, drafts: data.drafts }]);
       else setError(data.error ?? "응답을 받지 못했어요");
       if (data.usage && status) setStatus({ ...status, ...data.usage, remainingKrw: Math.max(0, data.usage.capKrw - data.usage.spentKrw) });
       if (data.added?.length) router.refresh();
@@ -69,6 +73,22 @@ export function AiChat() {
       setError("인터넷 연결을 확인해주세요");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function confirmDraft(key: string, d: Draft) {
+    setDraftState((s) => ({ ...s, [key]: "saving" }));
+    const res = await confirmAiDraftAction(d).catch(() => ({ error: "저장하지 못했어요" }) as { id?: string; error?: string });
+    if (res.id) {
+      setDraftState((s) => ({ ...s, [key]: res.id! }));
+      router.refresh();
+    } else {
+      setDraftState((s) => {
+        const n = { ...s };
+        delete n[key];
+        return n;
+      });
+      setError(res.error ?? "저장하지 못했어요");
     }
   }
 
@@ -150,6 +170,47 @@ export function AiChat() {
             ))}
           </div>
         ))}
+
+        {turns.map((t, ti) =>
+          t.drafts?.map((d, di) => {
+            const key = `${ti}:${di}`;
+            const st = draftState[key];
+            return (
+              <div key={key} className="flex items-center gap-3 rounded-xl border border-dashed border-accent bg-surface p-3 text-sm">
+                <span className="min-w-0 flex-1">
+                  <span className="block">
+                    {d.memo || d.categoryName || "내역"} <b className="tabular">{formatSigned(d.amount, d.type)}</b>
+                  </span>
+                  <span className="block text-xs text-muted">
+                    {d.occurredOn} · {d.categoryName ?? (d.type === "transfer" ? "이체" : "미분류")}
+                    {d.paymentMethodName ? ` · ${d.paymentMethodName}` : ""}
+                  </span>
+                </span>
+                {st === "skip" ? (
+                  <span className="text-xs text-muted">취소함</span>
+                ) : st && st !== "saving" ? (
+                  <Link href={`/transactions/${st}`} className="text-xs text-income">
+                    추가됨 ›
+                  </Link>
+                ) : (
+                  <>
+                    <button type="button" onClick={() => setDraftState((s) => ({ ...s, [key]: "skip" }))} className="text-xs text-muted">
+                      취소
+                    </button>
+                    <button
+                      type="button"
+                      disabled={st === "saving"}
+                      onClick={() => confirmDraft(key, d)}
+                      className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-ink disabled:opacity-50"
+                    >
+                      추가
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          }),
+        )}
 
         {busy && <div className="w-24 animate-pulse rounded-2xl bg-surface px-4 py-2.5 text-sm text-muted">생각 중…</div>}
         {error && (

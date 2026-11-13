@@ -153,13 +153,63 @@ export async function deleteTransactionAction(formData: FormData) {
   redirect(/^\d{4}-\d{2}$/.test(month) ? `/transactions?month=${month}` : "/transactions");
 }
 
-/** AI가 추가한 거래 되돌리기 (화면 이동 없음) */
+/**
+ * AI가 방금 추가한 거래 되돌리기 (화면 이동 없음).
+ * 본인이 AI로 추가했고 24시간 안인 거래만 지운다. 배우자 거래나 직접 입력한 거래는 지울 수 없다.
+ */
 export async function undoTransactionAction(id: string): Promise<{ ok: boolean }> {
   if (!UUID.test(id)) return { ok: false };
-  const { db } = await getAppContext();
-  const { error } = await deleteTransaction(db, id);
-  if (!error) refreshAll();
-  return { ok: !error };
+  const { db, user, ledger } = await getAppContext();
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await db
+    .from("transactions")
+    .delete()
+    .eq("id", id)
+    .eq("ledger_id", ledger.id)
+    .eq("created_by", user.id)
+    .eq("source", "ai")
+    .gte("created_at", since)
+    .select("id");
+  const ok = !error && (data?.length ?? 0) === 1;
+  if (ok) refreshAll();
+  return { ok };
+}
+
+/** AI가 만든 확인 카드(draft)를 사용자가 눌러 저장 */
+export async function confirmAiDraftAction(draft: {
+  type: string;
+  amount: number;
+  occurredOn: string;
+  categoryId: string | null;
+  paymentMethodId: string | null;
+  memo: string;
+}): Promise<{ id?: string; error?: string }> {
+  const fd = new FormData();
+  fd.set("type", draft.type);
+  fd.set("amount", String(draft.amount));
+  fd.set("occurredOn", draft.occurredOn);
+  fd.set("categoryId", draft.categoryId ?? "");
+  fd.set("paymentMethodId", draft.paymentMethodId ?? "");
+  fd.set("memo", String(draft.memo ?? ""));
+  const parsed = readTransaction(fd);
+  if ("error" in parsed) return { error: parsed.error };
+  const ctx = await getAppContext();
+  const v = parsed.value;
+  const { data, error } = await addTransaction(ctx.db, {
+    ledger_id: ctx.ledger.id,
+    type: v.type,
+    amount: v.amount,
+    occurred_on: v.occurredOn,
+    category_id: v.categoryId,
+    payment_method_id: v.paymentMethodId,
+    memo: v.memo,
+    created_by: ctx.user.id,
+    source: "ai",
+  });
+  if (error || !data) return { error: "저장하지 못했어요" };
+  notifyAdded(ctx, v);
+  refreshAll();
+  return { id: (data as { id: string }).id };
 }
 
 /* ───────── 확인 대기함 ───────── */
