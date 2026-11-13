@@ -12,6 +12,9 @@
   --income: #1f6f5c;
   --expense: #b4472f;
   --warn: #b7791f;
+  /* 차트 전용 (dataviz 검증 통과: light, 표면 #ffffff) */
+  --chart-income: #00806a;
+  --chart-expense: #cc4b2b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -27,6 +30,9 @@
     --income: #4fb39a;
     --expense: #e07a5f;
     --warn: #e0a84f;
+    /* 차트 전용 (dataviz 검증 통과: dark, 표면 #1d1c1a) */
+    --chart-income: #2f9c83;
+    --chart-expense: #d4643f;
   }
 }
 
@@ -42,6 +48,8 @@
   --color-income: var(--income);
   --color-expense: var(--expense);
   --color-warn: var(--warn);
+  --color-chart-income: var(--chart-income);
+  --color-chart-expense: var(--chart-expense);
   --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
 }
 

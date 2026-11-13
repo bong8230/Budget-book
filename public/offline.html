@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>오프라인 · 우리집 가계부</title>
+    <style>
+      :root { --bg: #f6f5f1; --ink: #1d1c1a; --muted: #6f6b63; --accent: #1f6f5c; --accent-ink: #fff; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #141412; --ink: #f1efe9; --muted: #a39e94; --accent: #4fb39a; --accent-ink: #0e1a17; } }
+      html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+      main { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; box-sizing: border-box; }
+      p { color: var(--muted); font-size: 14px; }
+      button { margin-top: 20px; height: 48px; width: 100%; max-width: 320px; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 16px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>인터넷에 연결되어 있지 않아요</h1>
+      <p>오프라인에서는 내역을 보거나 입력할 수 없어요. 연결되면 다시 시도해주세요.</p>
+      <button type="button" onclick="location.reload()">다시 시도</button>
+    </main>
+  </body>
+</html>

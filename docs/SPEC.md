@@ -87,3 +87,54 @@ Content-Type: application/json
 |---|---|
 | Codex | `supabase/**`, `lib/db/**`, `lib/import/**`, `lib/budget.ts`, `app/api/**` |
 | Claude | 루트 설정 파일, `docs/**`, `app/**`(api 제외), `components/**`, `public/**` |
+
+---
+
+# 2차 기능 (2026-11-13 확정)
+
+참고: [we-promise/sure](https://github.com/we-promise/sure)의 기능 아이디어만 참고했습니다. Sure는 AGPL-3.0이므로 **코드는 복사하지 않고** 새로 작성합니다.
+
+| # | 기능 | 요약 |
+|---|---|---|
+| 1 | 자동 분류 규칙 | 키워드(가맹점·원문 포함) → 카테고리·종류·결제수단 지정, 선택적으로 자동 등록 |
+| 2 | 중복 병합 | 가져온 내역이 이미 입력된 거래와 같아 보이면 '합치기' 제안 |
+| 3 | 이체 매칭 | 카드대금·내 계좌 간 이동은 지출이 아닌 이체로 분류해 이중 집계 방지 |
+| 4 | 결제수단 표시 | 카드·통장·현금 목록. 거래마다 결제수단 표시 (잔액 관리 없음) |
+| 5 | 고정지출 | 월세·통신비·구독 등록과 자동 감지, '이번 달 나갈 돈'과 처리 여부 |
+| 7 | 리포트 | 최근 6개월 수입·지출 추이, 카테고리 비중, 전월 대비 |
+
+## 데이터 모델 (추가)
+
+```
+payment_methods  id, ledger_id, name, kind('card'|'account'|'cash'), owner_id null, keywords text[], archived_at null, created_at
+rules            id, ledger_id, keyword, category_id null, set_type null('income'|'expense'|'transfer'),
+                 payment_method_id null, auto_accept bool, created_by, created_at
+recurring_items  id, ledger_id, name, type('income'|'expense'|'transfer'), amount, day_of_month 1..31,
+                 category_id null, payment_method_id null, keyword, active bool, created_at
+transactions     + payment_method_id null, + merchant text null
+imports          + category_id null, + payment_method_id null, + duplicate_of uuid null (transactions),
+                 + rule_id null, type에 'transfer' 허용
+```
+
+## 처리 규칙
+
+- **가져오기 파이프라인** (`/api/import`): 파싱 → 결제수단 매칭(`keywords` 중 하나가 원문에 포함) → 규칙 적용(먼저 만든 규칙 우선, 키워드가 원문 또는 가맹점에 포함) → 이체 판정 → 중복 판정 → `auto_accept` 규칙이고 중복 후보가 없으면 바로 거래 생성, 아니면 pending
+- **이체 판정**: `카드대금|카드결제|결제대금|자동이체.*카드|내계좌|본인계좌` 키워드, 또는 규칙의 `set_type='transfer'`. 이체는 예산·지출 합계에서 제외
+- **중복 판정**: 같은 가계부에서 금액과 종류가 같고 날짜가 ±1일 이내이며, 아직 어떤 import와도 연결되지 않은 거래가 있으면 `duplicate_of`로 지정
+- **합치기**: import를 accepted로 바꾸고 `transaction_id = duplicate_of`. 거래에 결제수단·가맹점이 비어 있으면 import 값으로 채움
+- **고정지출 상태** (월 단위): 해당 월에 `keyword`가 메모·가맹점에 포함되고 금액이 ±10% 이내인 거래가 있으면 '처리됨', 없으면 예정일과 함께 '예정'. 31일 같은 날짜는 그 달의 말일로 보정
+- **고정지출 감지**: 최근 3개월 중 2개월 이상, 같은 가맹점(정규화)에서 금액 차이 ±10% 이내 지출 → 후보로 제안 (이미 등록된 키워드는 제외)
+- **리포트**: 최근 6개월 월별 수입·지출(이체 제외), 이번 달 카테고리 비중, 전월 대비 카테고리별 증감
+
+## 테스트 전략
+
+1. 순수 로직 단위 테스트 (Vitest): 파서, 규칙 매칭, 이체·중복 판정, 고정지출 상태·감지, 리포트 집계
+2. DB 테스트 (PGlite): 마이그레이션 적용, RLS(다른 가계부 접근 차단, 본인 import만), RPC(가져오기 처리, 합치기)
+3. E2E (Playwright, 클라우드 Supabase 연결 후): 로그인 → 가계부 → 입력 → 가져오기 웹훅 → 확인 대기 → 규칙 → 리포트
+
+## 작업 분담 (2차)
+
+| 담당 | 범위 |
+|---|---|
+| Codex | 마이그레이션, `lib/db/**`(types·queries), `lib/import/**`(파이프라인·결제수단·이체·중복), `lib/rules/**`, `lib/recurring/**`(상태·감지), `lib/report/**`(집계), `app/api/**`, 로직·DB 테스트 |
+| Claude | 화면 전체: 결제수단·규칙 설정, 고정지출 화면, 리포트 화면, 확인 대기함(중복·이체·규칙 만들기), 입력 폼·목록의 결제수단, 홈 '이번 달 나갈 돈', E2E 테스트(`e2e/**`, `playwright.config.ts`) |

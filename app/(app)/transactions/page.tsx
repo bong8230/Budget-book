@@ -1,6 +1,6 @@
 import { getAppContext } from "@/app/_lib/context";
 import { sumByType, toRows } from "@/app/_lib/rows";
-import { listCategories, listTransactions } from "@/lib/db/queries";
+import { listCategories, listPaymentMethods, listTransactions } from "@/lib/db/queries";
 import { MonthSwitcher } from "@/components/month-switcher";
 import { TransactionList } from "@/components/transaction-list";
 import { formatWon, isMonthKey, monthKey } from "@/components/format";
@@ -12,9 +12,10 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
   const month = isMonthKey(raw) ? raw : monthKey();
   const { db, user, ledger, members } = await getAppContext();
 
-  const [{ data: txs }, { data: categories }] = await Promise.all([
+  const [{ data: txs }, { data: categories }, { data: methods }] = await Promise.all([
     listTransactions(db, ledger.id, month),
     listCategories(db, ledger.id),
+    listPaymentMethods(db, ledger.id),
   ]);
   const transactions = txs ?? [];
   const { income, expense } = sumByType(transactions);
@@ -68,7 +69,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
         </details>
       )}
 
-      <TransactionList items={toRows(transactions, categories ?? [], members, user.id)} emptyText="이 달에는 내역이 없어요" />
+      <TransactionList items={toRows(transactions, categories ?? [], members, user.id, methods ?? [])} emptyText="이 달에는 내역이 없어요" />
     </div>
   );
 }

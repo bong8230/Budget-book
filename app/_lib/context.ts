@@ -28,7 +28,8 @@ export const getAppContext = cache(async () => {
   return { db, user, ledger: ledger as Ledger, members };
 });
 
-export function memberName(members: Member[], userId: string, meId: string): string {
+export function memberName(members: Member[], userId: string | null, meId: string): string {
+  if (!userId) return "탈퇴한 멤버";
   if (userId === meId) return "나";
   return members.find((m) => m.userId === userId)?.name ?? "배우자";
 }

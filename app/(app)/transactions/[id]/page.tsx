@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getAppContext, memberName } from "@/app/_lib/context";
-import { toOptions } from "@/app/_lib/rows";
-import { listCategories } from "@/lib/db/queries";
+import { toOptions, toPaymentOptions } from "@/app/_lib/rows";
+import { listCategories, listPaymentMethods } from "@/lib/db/queries";
 import type { Transaction } from "@/lib/db/types";
 import { TransactionForm } from "@/components/transaction-form";
 import { PageHeader } from "@/components/page-header";
@@ -19,9 +19,10 @@ export default async function EditTransactionPage({
   const { id } = await params;
   const { error } = await searchParams;
   const { db, user, ledger, members } = await getAppContext();
-  const [{ data: tx }, { data: categories }] = await Promise.all([
+  const [{ data: tx }, { data: categories }, { data: methods }] = await Promise.all([
     db.from("transactions").select("*").eq("id", id).eq("ledger_id", ledger.id).maybeSingle<Transaction>(),
     listCategories(db, ledger.id),
+    listPaymentMethods(db, ledger.id),
   ]);
   if (!tx) notFound();
 
@@ -44,6 +45,7 @@ export default async function EditTransactionPage({
       <p className="-mt-2 mb-3 px-1 text-xs text-muted">{memberName(members, tx.created_by, user.id)} 입력</p>
       <TransactionForm
         categories={toOptions(categories ?? [])}
+        paymentMethods={toPaymentOptions(methods ?? [])}
         action={updateTransactionAction}
         hidden={{ id: tx.id }}
         initial={{
@@ -51,7 +53,8 @@ export default async function EditTransactionPage({
           amount: Number(tx.amount),
           occurredOn: tx.occurred_on,
           categoryId: tx.category_id,
-          memo: tx.memo,
+          paymentMethodId: tx.payment_method_id,
+          memo: tx.memo || tx.merchant || "",
         }}
       />
     </>

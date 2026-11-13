@@ -4,12 +4,14 @@ import { useActionState, useState } from "react";
 import { formatWon, todayIso } from "./format";
 
 export type CategoryOption = { id: string; name: string; type: "income" | "expense" };
+export type PaymentOption = { id: string; name: string; kind: "card" | "account" | "cash" };
 
 export type TransactionFormValues = {
   type: "income" | "expense" | "transfer";
   amount: number;
   occurredOn: string;
   categoryId: string | null;
+  paymentMethodId: string | null;
   memo: string;
 };
 
@@ -17,6 +19,7 @@ export type FormState = { error?: string } | undefined;
 
 type Props = {
   categories: CategoryOption[];
+  paymentMethods?: PaymentOption[];
   initial?: Partial<TransactionFormValues>;
   submitLabel?: string;
   /** 서버 액션. 성공하면 redirect하고, 실패하면 { error }를 돌려준다 */
@@ -34,11 +37,12 @@ const TYPES = [
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "00", "0", "del"] as const;
 const MAX_AMOUNT = 9_999_999_999;
 
-export function TransactionForm({ categories, initial, submitLabel = "저장", action, hidden }: Props) {
+export function TransactionForm({ categories, paymentMethods = [], initial, submitLabel = "저장", action, hidden }: Props) {
   const [state, formAction, pending] = useActionState(action, undefined);
   const [type, setType] = useState<TransactionFormValues["type"]>(initial?.type ?? "expense");
   const [amount, setAmount] = useState<number>(initial?.amount ?? 0);
   const [categoryId, setCategoryId] = useState<string | null>(initial?.categoryId ?? null);
+  const [paymentMethodId, setPaymentMethodId] = useState<string | null>(initial?.paymentMethodId ?? null);
 
   const visibleCategories = type === "transfer" ? [] : categories.filter((c) => c.type === type);
 
@@ -56,6 +60,7 @@ export function TransactionForm({ categories, initial, submitLabel = "저장", a
       <input type="hidden" name="type" value={type} />
       <input type="hidden" name="amount" value={amount} />
       <input type="hidden" name="categoryId" value={categoryId ?? ""} />
+      <input type="hidden" name="paymentMethodId" value={paymentMethodId ?? ""} />
 
       <div role="radiogroup" aria-label="거래 종류" className="grid grid-cols-3 rounded-xl bg-surface-2 p-1">
         {TYPES.map((t) => (
@@ -99,6 +104,26 @@ export function TransactionForm({ categories, initial, submitLabel = "저장", a
       )}
 
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 rounded-2xl bg-surface px-4 py-3 text-sm">
+        {paymentMethods.length > 0 && (
+          <>
+            <label htmlFor="paymentMethod" className="text-muted">
+              결제수단
+            </label>
+            <select
+              id="paymentMethod"
+              value={paymentMethodId ?? ""}
+              onChange={(e) => setPaymentMethodId(e.target.value || null)}
+              className="bg-transparent text-right"
+            >
+              <option value="">선택 안 함</option>
+              {paymentMethods.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         <label htmlFor="occurredOn" className="text-muted">
           날짜
         </label>

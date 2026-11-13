@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const tabs = [
   { href: "/", label: "홈", icon: HomeIcon },
   { href: "/transactions", label: "내역", icon: ListIcon },
+  { href: "/reports", label: "리포트", icon: ChartIcon },
   { href: "/inbox", label: "확인 대기", icon: InboxIcon },
   { href: "/settings", label: "설정", icon: GearIcon },
 ] as const;
@@ -14,7 +15,7 @@ export function BottomNav({ pendingCount = 0 }: { pendingCount?: number }) {
   const pathname = usePathname();
   return (
     <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface/95 backdrop-blur">
-      <ul className="mx-auto grid max-w-md grid-cols-4">
+      <ul className="mx-auto grid max-w-md grid-cols-5">
         {tabs.map(({ href, label, icon: Icon }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
@@ -42,7 +43,8 @@ export function BottomNav({ pendingCount = 0 }: { pendingCount?: number }) {
 
 export function AddButton() {
   const pathname = usePathname();
-  if (pathname.startsWith("/transactions/") || pathname.startsWith("/inbox/")) return null;
+  if (pathname.startsWith("/transactions/") || pathname.startsWith("/inbox/") || pathname.startsWith("/settings/") || pathname === "/recurring")
+    return null;
   return (
     <Link
       href="/transactions/new"
@@ -67,6 +69,13 @@ function ListIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
       <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />
+    </svg>
+  );
+}
+function ChartIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <path d="M4 20h16M7 16v-5M12 16V7M17 16v-8" />
     </svg>
   );
 }

@@ -7,6 +7,8 @@ import { DeviceTokens, type DeviceRow } from "./device-tokens";
 import { PushToggle } from "./push-toggle";
 import { SignOutButton } from "./sign-out-button";
 import { NameForm } from "./name-form";
+import { DeleteAccount } from "./delete-account";
+import Link from "next/link";
 
 export const metadata = { title: "설정 · 우리집 가계부" };
 
@@ -47,6 +49,26 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <BudgetForm month={month} current={budget ? Number(budget.amount) : null} />
       </Section>
 
+      <Section title="가계부 관리">
+        <nav className="-my-1 divide-y divide-line">
+          {[
+            ["/settings/payment-methods", "결제수단", "카드·통장 목록과 알림 키워드"],
+            ["/settings/rules", "자동 분류 규칙", "가져온 내역을 카테고리로 자동 분류"],
+            ["/recurring", "고정지출", "매달 나가는 돈과 이번 달 처리 현황"],
+          ].map(([href, title, desc]) => (
+            <Link key={href} href={href} className="flex items-center justify-between py-3">
+              <span>
+                <span className="block">{title}</span>
+                <span className="block text-xs text-muted">{desc}</span>
+              </span>
+              <span aria-hidden className="text-muted">
+                ›
+              </span>
+            </Link>
+          ))}
+        </nav>
+      </Section>
+
       <Section title="알림" id="push">
         <PushToggle ledgerId={ledger.id} />
       </Section>
@@ -58,10 +80,24 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <DeviceTokens ledgerId={ledger.id} initial={(devices ?? []) as DeviceRow[]} />
       </Section>
 
+      <Section title="데이터" id="data">
+        <p className="text-sm text-muted">가계부의 모든 거래를 엑셀에서 열 수 있는 CSV 파일로 받아요.</p>
+        <a href="/api/export?format=csv" download className="mt-3 grid h-11 place-items-center rounded-xl border border-line font-semibold">
+          CSV 내보내기
+        </a>
+      </Section>
+
       <Section title="계정">
         <p className="text-sm text-muted">{user.email}</p>
         <SignOutButton />
+        <DeleteAccount lastMember={members.length <= 1} />
       </Section>
+
+      <p className="px-1 pb-2 text-center text-xs text-muted">
+        <Link href="/privacy" className="underline">
+          개인정보 처리 안내
+        </Link>
+      </p>
     </div>
   );
 }

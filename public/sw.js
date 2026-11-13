@@ -1,7 +1,15 @@
 // 우리집 가계부 서비스 워커: 설치 가능(PWA) + 웹 푸시 수신
-const SHELL_CACHE = "budget-shell-v1";
+const SHELL_CACHE = "budget-shell-v2";
+const OFFLINE_URL = "/offline.html";
 
-self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(SHELL_CACHE)
+      .then((c) => c.add(new Request(OFFLINE_URL, { cache: "reload" })))
+      .then(() => self.skipWaiting()),
+  );
+});
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
@@ -12,19 +20,11 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// 네비게이션 요청만 네트워크 우선, 실패하면 캐시된 화면으로 대체
+// 화면 요청은 항상 네트워크에서 받는다 (가계부 데이터를 기기에 캐시하지 않음). 실패하면 오프라인 안내
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET" || req.mode !== "navigate") return;
-  event.respondWith(
-    fetch(req)
-      .then((res) => {
-        const copy = res.clone();
-        caches.open(SHELL_CACHE).then((c) => c.put(req, copy));
-        return res;
-      })
-      .catch(() => caches.match(req).then((hit) => hit || caches.match("/"))),
-  );
+  event.respondWith(fetch(req).catch(() => caches.match(OFFLINE_URL)));
 });
 
 // 서버(app/api) 푸시 페이로드: { title, body, url }

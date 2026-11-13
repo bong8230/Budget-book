@@ -1,25 +1,30 @@
 import Link from "next/link";
 import { getAppContext } from "@/app/_lib/context";
 import { sumByType, toRows } from "@/app/_lib/rows";
-import { getMonthlyBudget, listCategories, listPendingImports, listTransactions } from "@/lib/db/queries";
+import { getMonthlyBudget, getRecurringStatus, listCategories, listPaymentMethods, listPendingImports, listTransactions } from "@/lib/db/queries";
 import { BudgetGauge } from "@/components/budget-gauge";
 import { TransactionList } from "@/components/transaction-list";
-import { formatWon, monthKey, monthLabel } from "@/components/format";
+import { formatWon, monthKey, monthLabel, todayIso } from "@/components/format";
 
 export default async function HomePage() {
   const { db, user, ledger, members } = await getAppContext();
   const month = monthKey();
 
-  const [{ data: txs }, { data: categories }, { data: budget }, { data: pending }] = await Promise.all([
+  const [{ data: txs }, { data: categories }, { data: budget }, { data: pending }, { data: methods }, recurring] = await Promise.all([
     listTransactions(db, ledger.id, month),
     listCategories(db, ledger.id),
     getMonthlyBudget(db, ledger.id, `${month}-01`),
     listPendingImports(db, ledger.id),
+    listPaymentMethods(db, ledger.id),
+    getRecurringStatus(db, ledger.id, month).catch(() => []),
   ]);
+  const upcoming = recurring.filter((r) => !r.matchedTransactionId && r.item.type !== "income");
+  const upcomingTotal = upcoming.reduce((s, r) => s + Number(r.item.amount), 0);
+  const today = todayIso();
 
   const transactions = txs ?? [];
   const { income, expense } = sumByType(transactions);
-  const recent = toRows(transactions.slice(0, 5), categories ?? [], members, user.id);
+  const recent = toRows(transactions.slice(0, 5), categories ?? [], members, user.id, methods ?? []);
   const pendingCount = pending?.length ?? 0;
 
   return (
@@ -52,6 +57,36 @@ export default async function HomePage() {
             ›
           </span>
         </Link>
+      )}
+
+      {recurring.length > 0 && (
+        <section className="rounded-2xl bg-surface p-4">
+          <Link href="/recurring" className="flex items-baseline justify-between">
+            <h2 className="font-semibold">이번 달 나갈 돈</h2>
+            <span className="tabular text-sm">
+              {upcoming.length > 0 ? (
+                <>
+                  {upcoming.length}건 · <span className="font-semibold">{formatWon(upcomingTotal)}</span>
+                </>
+              ) : (
+                <span className="text-income">모두 처리됨</span>
+              )}
+            </span>
+          </Link>
+          {upcoming.length > 0 && (
+            <ul className="mt-2 space-y-1 text-sm">
+              {upcoming.slice(0, 3).map((r) => (
+                <li key={r.item.id} className="tabular flex justify-between">
+                  <span className={r.dueDate < today ? "text-expense" : ""}>
+                    {Number(r.dueDate.slice(8))}일 {r.item.name}
+                    {r.dueDate < today ? " (지남)" : ""}
+                  </span>
+                  <span className="text-muted">{formatWon(Number(r.item.amount))}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
 
       <section>

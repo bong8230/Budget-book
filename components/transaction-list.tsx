@@ -9,6 +9,7 @@ export type TransactionRow = {
   memo: string;
   categoryName: string | null;
   authorName: string;
+  paymentMethodName?: string | null;
   fromImport?: boolean;
 };
 
@@ -44,7 +45,8 @@ export function TransactionList({ items, emptyText = "아직 내역이 없어요
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[15px]">{r.memo || r.categoryName || "내역"}</span>
                       <span className="block truncate text-xs text-muted">
-                        {r.categoryName ?? "미분류"} · {r.authorName}
+                        {r.categoryName ?? (r.type === "transfer" ? "이체" : "미분류")}
+                        {r.paymentMethodName ? ` · ${r.paymentMethodName}` : ""} · {r.authorName}
                         {r.fromImport ? " · 자동" : ""}
                       </span>
                     </span>

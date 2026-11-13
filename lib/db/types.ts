@@ -1,7 +1,12 @@
 export type TransactionType = 'income' | 'expense' | 'transfer';
-export type Ledger = { id: string; name: string; created_by: string; created_at: string };
+export type Ledger = { id: string; name: string; created_by: string | null; created_at: string };
 export type LedgerMember = { ledger_id: string; user_id: string; role: 'owner' | 'member'; display_name: string; joined_at: string };
 export type Category = { id: string; ledger_id: string; name: string; type: 'income' | 'expense' };
-export type Transaction = { id: string; ledger_id: string; type: TransactionType; amount: number; occurred_on: string; category_id: string | null; memo: string; created_by: string; created_at: string; updated_at: string };
+export type Transaction = { id: string; ledger_id: string; type: TransactionType; amount: number; occurred_on: string; category_id: string | null; payment_method_id: string | null; merchant: string | null; memo: string; created_by: string | null; created_at: string; updated_at: string };
 export type MonthlyBudget = { ledger_id: string; month: string; amount: number };
-export type ImportItem = { id: string; ledger_id: string; owner_id: string; source: string; raw_text: string; amount: number | null; occurred_on: string | null; merchant: string | null; type: TransactionType | null; status: 'pending' | 'accepted' | 'ignored'; transaction_id: string | null; created_at: string };
+export type ImportItem = { id: string; ledger_id: string; owner_id: string; source: string; raw_text: string; amount: number | null; occurred_on: string | null; merchant: string | null; type: TransactionType | null; status: 'pending' | 'accepted' | 'ignored'; transaction_id: string | null; category_id: string | null; payment_method_id: string | null; duplicate_of: string | null; rule_id: string | null; duplicate: Pick<Transaction, 'id' | 'amount' | 'occurred_on' | 'memo'> | null; created_at: string };
+export type PaymentMethod = { id: string; ledger_id: string; name: string; kind: 'card' | 'account' | 'cash'; owner_id: string | null; keywords: string[]; archived_at: string | null; created_at: string };
+export type Rule = { id: string; ledger_id: string; keyword: string; category_id: string | null; set_type: TransactionType | null; payment_method_id: string | null; auto_accept: boolean; created_by: string | null; created_at: string };
+export type RecurringItem = { id: string; ledger_id: string; name: string; type: TransactionType; amount: number; day_of_month: number; category_id: string | null; payment_method_id: string | null; keyword: string; active: boolean; created_at: string };
+export type RecurringStatus = { item: RecurringItem; dueDate: string; matchedTransactionId: string | null };
+export type RecurringSuggestion = { merchant: string; keyword: string; amount: number; months: number };
