@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { addTransaction, aiQueryTransactions } from "@/lib/db/queries";
 import type { Category, PaymentMethod, Transaction, TransactionType } from "@/lib/db/types";
-import { amountsInText, asksToRecord } from "./amounts";
+import { AmountBudget, amountCandidates, asksToRecord } from "./amounts";
 
 /**
  * 가계부 AI 도우미.
@@ -170,7 +170,13 @@ async function runQuery(ctx: AssistantContext, input: QueryInput) {
   };
 }
 
-type Gate = { autoAmounts: Set<number>; allowAuto: boolean };
+/**
+ * 자동 저장 조건:
+ * - allowAuto: 마지막 사용자 문장이 질문이 아닌 기록 요청
+ * - amounts: 사용자가 금액으로 직접 말한 숫자 (각각 한 번만 사용)
+ * - tainted: 이번 요청에서 조회 도구가 외부 텍스트(메모·가맹점)를 모델에 보여준 뒤면 자동 저장 금지
+ */
+type Gate = { amounts: AmountBudget; allowAuto: boolean; tainted: boolean };
 
 async function runAdd(ctx: AssistantContext, input: AddInput, added: AddedTransaction[], drafts: DraftTransaction[], gate: Gate) {
   if (added.length + drafts.length >= 5) return { error: "한 번에 5건까지만 추가할 수 있어요" };
@@ -188,7 +194,8 @@ async function runAdd(ctx: AssistantContext, input: AddInput, added: AddedTransa
   const memo = (input.memo ?? "").trim().slice(0, 200);
 
   // 사용자가 직접 기록을 요청하고 그 금액을 직접 쓴 경우에만 바로 저장. 아니면 확인 카드로
-  if (!gate.allowAuto || !gate.autoAmounts.has(input.amount)) {
+  const auto = gate.allowAuto && !gate.tainted && gate.amounts.take(input.amount);
+  if (!auto) {
     drafts.push({
       type: input.type,
       amount: input.amount,
@@ -301,7 +308,7 @@ export async function askAssistant(ctx: AssistantContext, history: ChatTurn[], m
 
   const prior: Anthropic.Beta.BetaMessageParam[] = history.slice(-10, -1).map((t) => ({ role: t.role, content: t.text }));
   const last = history[history.length - 1];
-  const gate: Gate = { autoAmounts: amountsInText(last.text), allowAuto: asksToRecord(last.text) };
+  const gate: Gate = { amounts: new AmountBudget(amountCandidates(last.text)), allowAuto: asksToRecord(last.text), tainted: false };
   const messages: Anthropic.Beta.BetaMessageParam[] = [
     ...prior,
     { role: "user", content: `[오늘: ${ctx.today}]\n${last.text}` },
@@ -365,7 +372,10 @@ export async function askAssistant(ctx: AssistantContext, history: ChatTurn[], m
     for (const use of toolUses) {
       let out: unknown;
       try {
-        if (use.name === "query_transactions") out = await runQuery(ctx, use.input as QueryInput);
+        if (use.name === "query_transactions") {
+          out = await runQuery(ctx, use.input as QueryInput);
+          gate.tainted = true;
+        }
         else if (use.name === "add_transaction") out = await runAdd(ctx, use.input as AddInput, added, drafts, gate);
         else out = { error: "알 수 없는 도구" };
       } catch {
