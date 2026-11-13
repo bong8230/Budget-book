@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Category, TransactionType, Transaction, PaymentMethod, Rule, RecurringItem } from '@/lib/db/types';
+import type { Category, TransactionType, Transaction, PaymentMethod, Rule, RecurringItem, InstallmentPlan, InstallmentStatus } from '@/lib/db/types';
 import { recurringStatus, recurringSuggestions } from '@/lib/recurring';
 export async function listLedgers(db: SupabaseClient) { return db.from('ledgers').select('*').order('created_at'); }
 export async function getMyLedger(db: SupabaseClient) { return db.from('ledgers').select('*').order('created_at').limit(1).maybeSingle(); }
@@ -39,7 +39,7 @@ export async function ignoreImport(db: SupabaseClient, id: string) { return reso
 export async function listDeviceTokens(db: SupabaseClient, ledgerId: string) { return db.from('device_tokens').select('id,ledger_id,name,created_at,last_used_at,revoked_at').eq('ledger_id', ledgerId).order('created_at', { ascending: false }); }
 export type PaymentMethodInput = Pick<PaymentMethod, 'ledger_id' | 'name' | 'kind'> & Partial<Pick<PaymentMethod, 'owner_id' | 'keywords'>>;
 export type RuleInput = Pick<Rule, 'ledger_id' | 'keyword'> & { created_by: string } & Partial<Pick<Rule, 'category_id' | 'set_type' | 'payment_method_id' | 'auto_accept'>>;
-export type RecurringInput = Pick<RecurringItem, 'ledger_id' | 'name' | 'type' | 'amount' | 'day_of_month' | 'keyword'> & Partial<Pick<RecurringItem, 'category_id' | 'payment_method_id' | 'active'>>;
+export type RecurringInput = Pick<RecurringItem, 'ledger_id' | 'name' | 'type' | 'amount' | 'day_of_month' | 'keyword'> & Partial<Pick<RecurringItem, 'category_id' | 'payment_method_id' | 'active' | 'frequency' | 'start_date' | 'end_date' | 'max_count' | 'auto_create'>>;
 export async function listPaymentMethods(db: SupabaseClient, ledgerId: string) { return db.from('payment_methods').select('*').eq('ledger_id', ledgerId).is('archived_at', null).order('created_at'); }
 export async function addPaymentMethod(db: SupabaseClient, input: PaymentMethodInput) { return db.from('payment_methods').insert(input).select().single(); }
 export async function updatePaymentMethod(db: SupabaseClient, id: string, changes: Partial<Omit<PaymentMethodInput, 'ledger_id'>>) { return db.from('payment_methods').update(changes).eq('id', id).select().single(); }
@@ -53,6 +53,23 @@ export async function listRecurring(db: SupabaseClient, ledgerId: string) { retu
 export async function addRecurring(db: SupabaseClient, input: RecurringInput) { return db.from('recurring_items').insert(input).select().single(); }
 export async function updateRecurring(db: SupabaseClient, id: string, changes: Partial<Omit<RecurringInput, 'ledger_id'>>) { return db.from('recurring_items').update(changes).eq('id', id).select().single(); }
 export async function deleteRecurring(db: SupabaseClient, id: string) { return db.from('recurring_items').delete().eq('id', id); }
+export type InstallmentInput = { ledgerId: string; userId: string; total: number; months: number; firstDate: string; categoryId?: string | null; paymentMethodId?: string | null; merchant?: string | null; memo?: string };
+export async function createInstallment(db: SupabaseClient, input: InstallmentInput) {
+  const result = await db.rpc('create_installment', { target_ledger: input.ledgerId, target_user: input.userId, total: input.total, months: input.months, first_date: input.firstDate, category_id: input.categoryId ?? null, payment_method_id: input.paymentMethodId ?? null, merchant: input.merchant ?? null, memo: input.memo ?? '' });
+  return { ...result, data: result.data as { id: string } | null };
+}
+export async function deleteInstallment(db: SupabaseClient, ledgerId: string, planId: string, fromDate: string) { return db.rpc('delete_installment', { target_ledger: ledgerId, plan_id: planId, from_date: fromDate }); }
+export async function listInstallments(db: SupabaseClient, ledgerId: string, today: string): Promise<InstallmentStatus[]> {
+  const { data, error } = await db.rpc('list_installments', { target_ledger: ledgerId, today });
+  if (error) throw error;
+  return (data ?? []).map((row: { plan: InstallmentPlan; paid_count: number | string; remaining_count: number | string; remaining_amount: number | string; next_date: string | null }) => ({ plan: row.plan, paidCount: Number(row.paid_count), remainingCount: Number(row.remaining_count), remainingAmount: Number(row.remaining_amount), nextDate: row.next_date }));
+}
+export type GeneratedRecurring = { transaction_id: string; ledger_id: string; item_name: string; amount: number; occurred_on: string };
+export async function generateDueRecurring(db: SupabaseClient, ledgerId: string) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Seoul', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
+  const result = await db.rpc('generate_due_recurring', { target_ledger: ledgerId, until_date: today });
+  return { ...result, data: result.data as GeneratedRecurring[] | null };
+}
 export async function mergeImport(db: SupabaseClient, importId: string, transactionId: string) { return db.rpc('merge_import', { item_id: importId, target_transaction: transactionId }); }
 export async function listTransactionsRange(db: SupabaseClient, ledgerId: string, fromMonth: string, toMonth: string) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(fromMonth) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(toMonth) || fromMonth > toMonth) throw new Error('Expected ordered YYYY-MM range');

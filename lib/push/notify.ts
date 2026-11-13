@@ -6,20 +6,24 @@ import { createClient } from '@/lib/db/server';
 export type PushPayload = { title: string; body: string; url: string };
 
 /** Server-internal delivery. Failures are isolated from the transaction/import itself. */
-export async function notifyUsers(ledgerId: string, userIds: string[], payload: PushPayload): Promise<void> {
-  if (!userIds.length || !process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+export async function notifyUsers(ledgerId: string, userIds: string[], payload: PushPayload): Promise<{ attempted: number; failed: number }> {
+  if (!userIds.length) return { attempted: 0, failed: 0 };
+  if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) return { attempted: 0, failed: 1 };
   const admin = createAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
   const { data, error } = await admin.from('push_subscriptions').select('id,endpoint,p256dh,auth').eq('ledger_id', ledgerId).in('owner_id', userIds);
-  if (error || !data) return;
-  try { webpush.setVapidDetails('mailto:admin@example.com', process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY); } catch { return; }
-  await Promise.allSettled(data.map(async subscription => {
+  if (error || !data) return { attempted: 0, failed: 1 };
+  try { webpush.setVapidDetails('mailto:admin@example.com', process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY); } catch { return { attempted: 0, failed: 1 }; }
+  const results = await Promise.all(data.map(async subscription => {
     try {
       await webpush.sendNotification({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, JSON.stringify(payload));
     } catch (error) {
       const status = (error as { statusCode?: number }).statusCode;
-      if (status === 404 || status === 410) await admin.from('push_subscriptions').delete().eq('id', subscription.id);
+      if (status === 404 || status === 410) { await admin.from('push_subscriptions').delete().eq('id', subscription.id); return true; }
+      return false;
     }
+    return true;
   }));
+  return { attempted: data.length, failed: results.filter(result => !result).length };
 }
 
 /** Called by an authenticated server action after inserting a transaction. */
