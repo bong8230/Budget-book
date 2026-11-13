@@ -302,6 +302,33 @@ test("같은 결제가 문자와 앱 알림으로 오면 하나로 합친다", a
   expect(((await res.json()) as { status: string }).status).toBe("duplicate");
 });
 
+test("카테고리를 추가하고 이름을 바꾸고 지울 수 있다", async ({ page, context, baseURL }) => {
+  await signIn(context, alice, baseURL!);
+  await page.goto("/settings/categories");
+  await page.getByLabel("이름").fill("E2E반려동물");
+  await page.getByRole("button", { name: "추가" }).click();
+  await expect(page.getByText("E2E반려동물")).toBeVisible();
+
+  await page.getByLabel("이름").fill(" E2E반려동물 ");
+  await page.getByRole("button", { name: "추가" }).click();
+  await expect(page.getByText("같은 이름의 카테고리가 이미 있어요")).toBeVisible();
+
+  await page.getByRole("link", { name: "E2E반려동물 수정" }).click();
+  await expect(page).toHaveURL(/edit=/);
+  await page.getByLabel("이름").fill("E2E반려견");
+  await page.getByRole("button", { name: "수정 저장" }).click();
+  await expect(page).not.toHaveURL(/edit=/);
+  await expect(page.getByText("E2E반려견")).toBeVisible();
+
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("listitem").filter({ hasText: "E2E반려견" }).getByRole("button", { name: "삭제" }).click();
+  await expect(page.getByText("E2E반려견")).toHaveCount(0);
+
+  await page.getByRole("link", { name: "수입" }).click();
+  await expect(page).toHaveURL(/type=income/);
+  await expect(page.getByRole("heading", { name: "수입 카테고리 추가" })).toBeVisible();
+});
+
 test("탈퇴하면 로그인 화면으로 가고 계정이 지워진다", async ({ page, context, baseURL }) => {
   await signIn(context, carol, baseURL!);
   await page.goto("/settings");

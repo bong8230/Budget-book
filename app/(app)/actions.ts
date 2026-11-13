@@ -8,17 +8,20 @@ import { formatSigned } from "@/components/format";
 import { getAppContext } from "@/app/_lib/context";
 import {
   acceptImport,
+  addCategory,
   addPaymentMethod,
   addRecurring,
   addRule,
   addTransaction,
   archivePaymentMethod,
   createInvite,
+  deleteCategory,
   deleteRecurring,
   deleteRule,
   deleteTransaction,
   ignoreImport,
   mergeImport,
+  renameCategory,
   setDisplayName,
   setMonthlyBudget,
   updatePaymentMethod,
@@ -348,6 +351,39 @@ export async function archivePaymentMethodAction(formData: FormData) {
   if (error) redirect("/settings/payment-methods?error=archive");
   refreshAll();
   redirect("/settings/payment-methods");
+}
+
+/* ───────── 카테고리 ───────── */
+
+export async function saveCategoryAction(_: FormState, formData: FormData): Promise<FormState> {
+  const id = optionalId(formData, "id");
+  const name = str(formData, "name", 30);
+  if (!name) return { error: "이름을 입력해주세요" };
+  const ctx = await getAppContext();
+  let type = String(formData.get("type"));
+  if (id) {
+    const { data, error } = await renameCategory(ctx.db, ctx.ledger.id, id, name);
+    if (error) return { error: error.code === "23505" ? "같은 이름의 카테고리가 이미 있어요" : "저장하지 못했어요" };
+    type = (data as { type?: string } | null)?.type ?? type;
+  } else {
+    if (type !== "income" && type !== "expense") return { error: "종류를 골라주세요" };
+    const { error } = await addCategory(ctx.db, { ledger_id: ctx.ledger.id, name, type });
+    if (error) return { error: error.code === "23505" ? "같은 이름의 카테고리가 이미 있어요" : "저장하지 못했어요" };
+  }
+  refreshAll();
+  // 추가는 같은 화면에 머문다. 수정은 ?edit= 에서 목록으로
+  if (id) redirect(`/settings/categories?type=${type === "income" ? "income" : "expense"}`);
+  return undefined;
+}
+
+export async function deleteCategoryAction(formData: FormData) {
+  const id = requiredId(formData, "id");
+  const type = formData.get("type") === "income" ? "income" : "expense";
+  const { db, ledger } = await getAppContext();
+  const { error } = await deleteCategory(db, ledger.id, id);
+  if (error) redirect(`/settings/categories?type=${type}&error=delete`);
+  refreshAll();
+  redirect(`/settings/categories?type=${type}`);
 }
 
 /* ───────── 자동 분류 규칙 ───────── */

@@ -53,6 +53,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <Section title="가계부 관리">
         <nav className="-my-1 divide-y divide-line">
           {[
+            ["/settings/categories", "카테고리", "지출·수입 카테고리 추가, 이름 바꾸기, 삭제"],
             ["/settings/payment-methods", "결제수단", "카드·통장 목록과 알림 키워드"],
             ["/settings/rules", "자동 분류 규칙", "가져온 내역을 카테고리로 자동 분류"],
             ["/recurring", "고정지출", "매달 나가는 돈과 이번 달 처리 현황"],
