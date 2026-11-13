@@ -7,8 +7,8 @@ const alice = '00000000-0000-0000-0000-000000000001';
 const bob = '00000000-0000-0000-0000-000000000002';
 let ledger: string;
 beforeAll(async () => {
-  await db.exec(`create role authenticated; create role anon; create role service_role; create schema auth; create table auth.users(id uuid primary key,email text); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; grant usage on schema public,auth to authenticated,service_role; grant execute on function auth.uid() to authenticated,service_role; alter default privileges in schema public grant all on tables to authenticated,service_role; alter default privileges in schema public grant execute on functions to authenticated,service_role; create publication supabase_realtime;`);
-  for (const name of ['20261111000000_initial.sql','20261111000001_member_names_categories.sql','20261113000000_phase2.sql','20261113000001_operations.sql','20261113000002_ai_usage.sql','20261113000003_ai_hardening.sql']) {
+  await db.exec(`create role authenticated; create role anon; create role service_role; create schema auth; create table auth.users(id uuid primary key,email text); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; grant usage on schema public,auth to authenticated,service_role; grant execute on function auth.uid() to authenticated,service_role; alter default privileges in schema public grant all on tables to authenticated,service_role; alter default privileges in schema public grant execute on functions to anon,authenticated,service_role; create publication supabase_realtime;`);
+  for (const name of ['20261111000000_initial.sql','20261111000001_member_names_categories.sql','20261113000000_phase2.sql','20261113000001_operations.sql','20261113000002_ai_usage.sql','20261113000003_ai_hardening.sql','20261113000004_function_privileges.sql']) {
     const sql = await readFile(`supabase/migrations/${name}`, 'utf8');
     await db.exec(sql.replace('create extension if not exists pgcrypto with schema extensions;', ''));
   }
@@ -18,6 +18,12 @@ beforeAll(async () => {
 });
 afterAll(async () => { await db.close(); });
 describe('phase 2 migration and RLS', () => {
+  it('blocks anonymous function execution while preserving authenticated RPC', async () => {
+    const result = await db.query<{anon_allowed:boolean;auth_allowed:boolean}>("select has_function_privilege('anon','public.create_ledger(text)','execute') anon_allowed, has_function_privilege('authenticated','public.create_ledger(text)','execute') auth_allowed");
+    expect(result.rows[0]).toEqual({anon_allowed:false,auth_allowed:true});
+    const trigger = await db.query<{anon_allowed:boolean;auth_allowed:boolean}>("select has_function_privilege('anon','public.cleanup_deleted_user()','execute') anon_allowed, has_function_privilege('authenticated','public.cleanup_deleted_user()','execute') auth_allowed");
+    expect(trigger.rows[0]).toEqual({anon_allowed:false,auth_allowed:false});
+  });
   it('seeds categories and isolates other users', async () => {
     expect((await db.query('select * from public.categories')).rows).toHaveLength(12);
     await db.exec(`select set_config('request.jwt.claim.sub','${bob}',false);`);
