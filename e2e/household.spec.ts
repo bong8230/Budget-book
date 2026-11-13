@@ -53,10 +53,11 @@ test("가계부를 만들고 이름·예산·결제수단을 정한다", async (
   await page.getByRole("button", { name: "저장" }).first().click();
 
   await page.getByLabel("월 예산").fill("1000000");
-  await page.locator("#budget").press("Enter");
+  await page.locator("#budget-amount").press("Enter");
   await expect(page.getByText("저장했어요")).toBeVisible();
 
   await page.getByRole("link", { name: /결제수단/ }).click();
+  await expect(page).toHaveURL(/\/settings\/payment-methods/);
   await page.getByLabel("이름").fill("신한카드");
   await page.getByLabel("알림 키워드").fill("신한, 1234");
   await page.getByRole("button", { name: "추가", exact: true }).click();
@@ -112,6 +113,7 @@ test("가져온 알림: 결제수단 자동 인식 → 규칙 만들기 → 등�
   await expect(card).toContainText("신한카드");
 
   await card.getByRole("link", { name: /자동 분류 규칙 만들기/ }).click();
+  await expect(page).toHaveURL(/\/settings\/rules\/new/);
   await expect(page.getByLabel("키워드")).toHaveValue("김밥천국");
   await page.getByLabel("카테고리").selectOption({ label: "식비" });
   await page.getByRole("button", { name: "규칙 만들기" }).click();
@@ -248,6 +250,7 @@ test("내역을 수정하고 삭제할 수 있다", async ({ page, context, base
   await signIn(context, alice, baseURL!);
   await page.goto("/transactions");
   await page.getByRole("link", { name: /점심/ }).click();
+  await expect(page).toHaveURL(/\/transactions\/[0-9a-f-]+/);
   await page.getByLabel("메모").fill("점심 회식");
   await page.getByRole("button", { name: "저장" }).click();
   await expect(page.getByRole("link", { name: /점심 회식/ })).toBeVisible();

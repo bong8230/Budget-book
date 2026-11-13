@@ -13,11 +13,11 @@ export function BudgetForm({ month, current }: { month: string; current: number 
     <form action={action} className="space-y-2">
       <input type="hidden" name="month" value={month} />
       <div className="flex items-center gap-2">
-        <label htmlFor="budget" className="sr-only">
+        <label htmlFor="budget-amount" className="sr-only">
           월 예산
         </label>
         <input
-          id="budget"
+          id="budget-amount"
           name="amount"
           inputMode="numeric"
           value={value}

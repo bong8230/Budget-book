@@ -26,7 +26,7 @@ test("말로 요청하면 거래를 추가하고 되돌릴 수 있다", async ({
   await signIn(context, user, baseURL!);
   await page.goto("/settings#budget");
   await page.getByLabel("월 예산").fill("1000000");
-  await page.locator("#budget").press("Enter");
+  await page.locator("#budget-amount").press("Enter");
   await expect(page.getByText("저장했어요")).toBeVisible();
 
   const t = today();

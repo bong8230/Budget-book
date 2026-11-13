@@ -333,7 +333,9 @@ export async function savePaymentMethodAction(_: FormState, formData: FormData):
     : await addPaymentMethod(ctx.db, { ledger_id: ctx.ledger.id, ...values });
   if (error) return { error: "저장하지 못했어요" };
   refreshAll();
-  redirect("/settings/payment-methods");
+  // 추가는 같은 화면에 머문다 (같은 주소로 redirect 하면 저장 중 상태가 멈추는 경우가 있다). 수정은 ?edit= 에서 목록으로
+  if (id) redirect("/settings/payment-methods");
+  return undefined;
 }
 
 export async function archivePaymentMethodAction(formData: FormData) {
@@ -405,7 +407,8 @@ export async function saveRecurringAction(_: FormState, formData: FormData): Pro
   const { error } = id ? await updateRecurring(ctx.db, id, values) : await addRecurring(ctx.db, { ledger_id: ctx.ledger.id, ...values });
   if (error) return { error: "저장하지 못했어요" };
   refreshAll();
-  redirect("/recurring");
+  if (id) redirect("/recurring");
+  return undefined;
 }
 
 export async function deleteRecurringAction(formData: FormData) {
