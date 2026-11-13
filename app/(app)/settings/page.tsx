@@ -5,6 +5,7 @@ import { InviteButton } from "./invite-button";
 import { BudgetForm } from "./budget-form";
 import { DeviceTokens, type DeviceRow } from "./device-tokens";
 import { PushToggle } from "./push-toggle";
+import { ImportGuide } from "./import-guide";
 import { SignOutButton } from "./sign-out-button";
 import { NameForm } from "./name-form";
 import { DeleteAccount } from "./delete-account";
@@ -78,6 +79,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           은행·카드의 입출금 알림을 이 가계부로 보내면 확인 대기함에 쌓여요. 폰마다 토큰을 하나씩 만드세요.
         </p>
         <DeviceTokens ledgerId={ledger.id} initial={(devices ?? []) as DeviceRow[]} />
+        <ImportGuide />
       </Section>
 
       <Section title="데이터" id="data">

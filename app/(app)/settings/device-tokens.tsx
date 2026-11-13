@@ -65,7 +65,7 @@ export function DeviceTokens({ ledgerId, initial }: { ledgerId: string; initial:
             <button type="button" onClick={sendTest} className="h-10 flex-1 rounded-xl border border-line font-semibold">
               테스트 보내기
             </button>
-            <a href="https://github.com/bong8230/Budget-book/blob/main/docs/IMPORT_SETUP.md" target="_blank" rel="noreferrer" className="grid h-10 flex-1 place-items-center rounded-xl border border-line font-semibold">
+            <a href="#import-guide" className="grid h-10 flex-1 place-items-center rounded-xl border border-line font-semibold">
               설정 방법
             </a>
           </div>
@@ -111,7 +111,7 @@ export function DeviceTokens({ ledgerId, initial }: { ledgerId: string; initial:
   );
 }
 
-function CopyField({ label, value }: { label: string; value: string }) {
+export function CopyField({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div>

@@ -124,6 +124,12 @@ test("기기 토큰을 만들고 잘못된 토큰은 거부한다", async ({ pag
   });
   expect(bad.status()).toBe(401);
   expect((await sendImport(page, "광고) 이번 주 특가 안내")).status).toBe("skipped");
+
+  // 폰 종류별 설정 안내
+  await page.getByRole("tab", { name: "안드로이드" }).click();
+  await expect(page.getByText("앱 푸시 알림").first()).toBeVisible();
+  await page.getByRole("tab", { name: "아이폰" }).click();
+  await expect(page.getByRole("button", { name: /api\/import/ }).first()).toBeVisible();
 });
 
 test("가져온 알림: 결제수단 자동 인식 → 규칙 만들기 → 등록", async ({ page, context, baseURL }) => {
@@ -283,6 +289,17 @@ test("내역을 수정하고 삭제할 수 있다", async ({ page, context, base
   await page.getByRole("link", { name: /점심 회식/ }).click();
   await page.getByRole("button", { name: "삭제" }).click();
   await expect(page.getByRole("link", { name: /점심 회식/ })).toHaveCount(0);
+});
+
+test("같은 결제가 문자와 앱 알림으로 오면 하나로 합친다", async ({ page }) => {
+  const sms = await sendImport(page, "[Web발신] 삼성카드 승인 7,777원 일시불 E2E중복가게");
+  expect(sms.status).toBe("pending");
+  const res = await page.request.post("/api/import", {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { text: "삼성카드\n7,777원 승인 일시불 E2E중복가게", source: "notification", app: "kr.co.samsungcard.mpocket" },
+  });
+  expect(res.status(), await res.text()).toBe(201);
+  expect(((await res.json()) as { status: string }).status).toBe("duplicate");
 });
 
 test("탈퇴하면 로그인 화면으로 가고 계정이 지워진다", async ({ page, context, baseURL }) => {
