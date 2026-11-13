@@ -67,3 +67,18 @@ export async function suggestRecurring(db: SupabaseClient, ledgerId: string) {
   if (transactions.error) throw transactions.error;
   return recurringSuggestions(transactions.data ?? [], items.data ?? [], months);
 }
+/** Use a server-only service client and user ID from auth.getUser(). */
+export async function reserveAiBudget(db: SupabaseClient, ledgerId: string, userId: string, reserveKrw: number, capKrw: number) {
+  return db.rpc('reserve_ai_budget', { target_ledger: ledgerId, target_user: userId, reserve_krw: reserveKrw, cap_krw: capKrw });
+}
+/** Use a server-only service client and user ID from auth.getUser(). */
+export async function settleAiUsage(db: SupabaseClient, id: string, userId: string, inputTokens: number, outputTokens: number, costKrw: number) {
+  return db.rpc('settle_ai_usage', { usage_id: id, target_user: userId, input_tokens: inputTokens, output_tokens: outputTokens, cost_krw: costKrw });
+}
+export async function getAiUsageSummary(db: SupabaseClient, ledgerId: string, month: string) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('Expected YYYY-MM');
+  const { data, error } = await db.rpc('ai_usage_summary', { target_ledger: ledgerId, target_month: `${month}-01` }).single();
+  if (error) throw error;
+  const row = data as { spent_krw: number; reserved_krw: number } | null;
+  return { spentKrw: Number(row?.spent_krw ?? 0), reservedKrw: Number(row?.reserved_krw ?? 0) };
+}

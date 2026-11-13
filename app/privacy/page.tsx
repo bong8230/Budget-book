@@ -44,8 +44,15 @@ export default function PrivacyPage() {
       </section>
 
       <section>
+        <h2 className="font-semibold">AI 도우미</h2>
+        <p className="mt-1 text-muted">
+          AI에게 묻기를 쓰면 질문과, 답에 필요한 거래 내역(날짜·금액·카테고리·메모)이 Anthropic의 Claude API로 전송돼요. 대화 내용은 앱에 저장하지 않아요. AI 비용은 그달 남은 예산의 10%를 넘지 않게 제한돼요.
+        </p>
+      </section>
+
+      <section>
         <h2 className="font-semibold">처리 위탁</h2>
-        <p className="mt-1 text-muted">데이터 저장과 로그인은 Supabase, 웹 서비스 호스팅은 Vercel에서 처리해요.</p>
+        <p className="mt-1 text-muted">데이터 저장과 로그인은 Supabase, 웹 서비스 호스팅은 Vercel, AI 응답은 Anthropic에서 처리해요.</p>
       </section>
     </main>
   );

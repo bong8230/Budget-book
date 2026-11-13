@@ -153,6 +153,15 @@ export async function deleteTransactionAction(formData: FormData) {
   redirect(/^\d{4}-\d{2}$/.test(month) ? `/transactions?month=${month}` : "/transactions");
 }
 
+/** AI가 추가한 거래 되돌리기 (화면 이동 없음) */
+export async function undoTransactionAction(id: string): Promise<{ ok: boolean }> {
+  if (!UUID.test(id)) return { ok: false };
+  const { db } = await getAppContext();
+  const { error } = await deleteTransaction(db, id);
+  if (!error) refreshAll();
+  return { ok: !error };
+}
+
 /* ───────── 확인 대기함 ───────── */
 
 /** 확인 대기 내역을 (수정한 값으로) 등록 */

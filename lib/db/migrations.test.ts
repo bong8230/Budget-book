@@ -8,7 +8,7 @@ const bob = '00000000-0000-0000-0000-000000000002';
 let ledger: string;
 beforeAll(async () => {
   await db.exec(`create role authenticated; create role anon; create role service_role; create schema auth; create table auth.users(id uuid primary key,email text); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; grant usage on schema public,auth to authenticated,service_role; grant execute on function auth.uid() to authenticated,service_role; alter default privileges in schema public grant all on tables to authenticated,service_role; alter default privileges in schema public grant execute on functions to authenticated,service_role; create publication supabase_realtime;`);
-  for (const name of ['20261111000000_initial.sql','20261111000001_member_names_categories.sql','20261113000000_phase2.sql','20261113000001_operations.sql']) {
+  for (const name of ['20261111000000_initial.sql','20261111000001_member_names_categories.sql','20261113000000_phase2.sql','20261113000001_operations.sql','20261113000002_ai_usage.sql']) {
     const sql = await readFile(`supabase/migrations/${name}`, 'utf8');
     await db.exec(sql.replace('create extension if not exists pgcrypto with schema extensions;', ''));
   }
@@ -85,6 +85,27 @@ describe('phase 2 migration and RLS', () => {
     await db.exec('set role service_role; select public.cleanup_old_imports(); reset role');
     expect((await db.query<{raw_text:string|null}>('select raw_text from public.imports where id=$1',[item])).rows[0].raw_text).toBeNull();
     await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub','${alice}',false);`);
+  });
+  it('reserves only against the ledger budget and settles once for its owner', async () => {
+    await db.exec('reset role');
+    await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub','${alice}',false);`);
+    const aiLedger = (await db.query<{id:string}>("select public.create_ledger('AI 테스트') id")).rows[0].id;
+    await db.exec('reset role');
+    await db.query("insert into public.monthly_budgets(ledger_id,month,amount) values($1,date_trunc('month',now() at time zone 'Asia/Seoul')::date,10000)",[aiLedger]);
+    await db.query("insert into public.transactions(ledger_id,type,amount,occurred_on,created_by) values($1,'expense',2000,date_trunc('month',now() at time zone 'Asia/Seoul')::date,$2),($1,'transfer',9000,date_trunc('month',now() at time zone 'Asia/Seoul')::date,$2)",[aiLedger,alice]);
+    await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub','${alice}',false);`);
+    await expect(db.query('select public.reserve_ai_budget($1,$2,1,99999)',[aiLedger,alice])).rejects.toThrow();
+    await db.exec('reset role; set role service_role');
+    await expect(db.query('select public.reserve_ai_budget($1,$2,1,99999)',[aiLedger,bob])).rejects.toThrow();
+    const no = await db.query<{id:string|null}>('select public.reserve_ai_budget($1,$2,801,99999) id',[aiLedger,alice]);
+    expect(no.rows[0].id).toBeNull();
+    const yes = await db.query<{id:string}>('select public.reserve_ai_budget($1,$2,500,99999) id',[aiLedger,alice]);
+    const id = yes.rows[0].id; expect(id).toBeTruthy();
+    expect((await db.query<{id:string|null}>('select public.reserve_ai_budget($1,$2,301,99999) id',[aiLedger,alice])).rows[0].id).toBeNull();
+    await expect(db.query('select public.settle_ai_usage($1,$2,10,20,2)',[id,bob])).rejects.toThrow();
+    await db.query('select public.settle_ai_usage($1,$2,10,20,2)',[id,alice]);
+    await expect(db.query('select public.settle_ai_usage($1,$2,10,20,2)',[id,alice])).rejects.toThrow();
+    await db.exec(`reset role; set role authenticated; select set_config('request.jwt.claim.sub','${alice}',false);`);
   });
   it('preserves shared transactions anonymously when a member leaves', async () => {
     await db.exec('reset role');

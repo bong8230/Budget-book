@@ -43,7 +43,7 @@ export function BottomNav({ pendingCount = 0 }: { pendingCount?: number }) {
 
 export function AddButton() {
   const pathname = usePathname();
-  if (pathname.startsWith("/transactions/") || pathname.startsWith("/inbox/") || pathname.startsWith("/settings/") || pathname === "/recurring")
+  if (pathname.startsWith("/transactions/") || pathname.startsWith("/inbox/") || pathname.startsWith("/settings/") || pathname === "/recurring" || pathname === "/ai")
     return null;
   return (
     <Link

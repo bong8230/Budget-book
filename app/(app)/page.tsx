@@ -34,6 +34,16 @@ export default async function HomePage() {
         <span className="text-sm text-muted">{monthLabel(month)}</span>
       </header>
 
+      <Link href="/ai" className="flex items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3 active:bg-surface-2">
+        <span aria-hidden className="grid size-8 place-items-center rounded-full bg-accent text-sm font-bold text-accent-ink">
+          AI
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">말로 기록하고 물어보기</span>
+          <span className="block truncate text-xs text-muted">“13일 마트에서 카드로 3000원” · “이번 달 식비 얼마?”</span>
+        </span>
+      </Link>
+
       <BudgetGauge limit={budget ? Number(budget.amount) : null} spent={expense} />
 
       <section className="grid grid-cols-2 gap-3">
