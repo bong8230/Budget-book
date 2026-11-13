@@ -22,6 +22,7 @@ export default async function NewTransactionPage({ searchParams }: { searchParam
   ]);
 
   const item = recurring.data;
+  const day = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined;
   const initial: Partial<TransactionFormValues> | undefined = item
     ? {
         type: item.type,
@@ -29,19 +30,21 @@ export default async function NewTransactionPage({ searchParams }: { searchParam
         categoryId: item.category_id,
         paymentMethodId: item.payment_method_id,
         memo: item.name,
-        occurredOn: date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined,
+        occurredOn: day,
       }
-    : undefined;
+    : day
+      ? { occurredOn: day }
+      : undefined;
 
   return (
     <>
-      <PageHeader title={item ? `${item.name} 입력` : "내역 입력"} back={item ? "/recurring" : "/transactions"} />
+      <PageHeader title={item ? `${item.name} 입력` : "내역 입력"} back={item ? "/recurring" : day ? `/transactions?view=calendar&month=${day.slice(0, 7)}&day=${day}` : "/transactions"} />
       <TransactionForm
         categories={toOptions(categories ?? [])}
         paymentMethods={toPaymentOptions(methods ?? [])}
         action={createTransactionAction}
         initial={initial}
-        hidden={item ? { back: "/recurring" } : undefined}
+        hidden={item ? { back: "/recurring" } : day ? { back: "calendar" } : undefined}
       />
     </>
   );

@@ -120,7 +120,10 @@ export async function createTransactionAction(_: FormState, formData: FormData):
   if (error) return { error: "저장하지 못했어요. 다시 시도해주세요" };
   notifyAdded(ctx, v);
   refreshAll();
-  redirect(str(formData, "back", 20) === "/recurring" ? "/recurring" : `/transactions?month=${v.occurredOn.slice(0, 7)}`);
+  const back = str(formData, "back", 20);
+  if (back === "/recurring") redirect("/recurring");
+  if (back === "calendar") redirect(`/transactions?view=calendar&month=${v.occurredOn.slice(0, 7)}&day=${v.occurredOn}`);
+  redirect(`/transactions?month=${v.occurredOn.slice(0, 7)}`);
 }
 
 export async function updateTransactionAction(_: FormState, formData: FormData): Promise<FormState> {

@@ -84,6 +84,31 @@ test("직접 입력한 지출이 내역·홈·예산에 반영된다", async ({ 
   await expect(page.getByText("987,700원")).toBeVisible();
 });
 
+test("달력 보기: 날짜별 합계와 그날 내역, 그날로 바로 입력", async ({ page, context, baseURL }) => {
+  await signIn(context, alice, baseURL!);
+  await page.goto("/transactions");
+  await page.getByRole("navigation", { name: "보기 방식" }).getByRole("link", { name: "달력" }).click();
+  await expect(page).toHaveURL(/view=calendar/);
+
+  const iso = `${t.y}-${String(t.m).padStart(2, "0")}-${String(t.d).padStart(2, "0")}`;
+  const cell = page.getByRole("link", { name: new RegExp(`^${t.d}일, .*지출 12300원`) });
+  await expect(cell).toHaveAttribute("aria-current", "date"); // 이번 달은 오늘이 기본 선택
+  await expect(cell).toContainText("-1.2만");
+  await expect(page.getByRole("link", { name: /점심/ })).toContainText("-12,300원");
+
+  // 달을 넘겨도 달력 보기가 유지된다
+  const prev = t.m === 1 ? `${t.y - 1}-12` : `${t.y}-${String(t.m - 1).padStart(2, "0")}`;
+  await page.getByRole("link", { name: "이전 달" }).click();
+  await expect(page).toHaveURL(new RegExp(`month=${prev}&view=calendar`));
+  await expect(page.getByRole("link", { name: "+ 이 날 추가" })).toHaveCount(0); // 다른 달은 선택 없음
+  await page.getByRole("link", { name: "다음 달" }).click();
+  await expect(page).toHaveURL(new RegExp(`month=${iso.slice(0, 7)}&view=calendar`));
+
+  await page.getByRole("link", { name: "+ 이 날 추가" }).click();
+  await expect(page).toHaveURL(new RegExp(`/transactions/new\\?date=${iso}`));
+  await expect(page.locator("#occurredOn")).toHaveValue(iso);
+});
+
 test("기기 토큰을 만들고 잘못된 토큰은 거부한다", async ({ page, context, baseURL }) => {
   await signIn(context, alice, baseURL!);
   await page.goto("/settings#import");
