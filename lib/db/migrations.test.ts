@@ -8,7 +8,7 @@ const bob = '00000000-0000-0000-0000-000000000002';
 let ledger: string;
 beforeAll(async () => {
   await db.exec(`create role authenticated; create role anon; create role service_role; create schema auth; create table auth.users(id uuid primary key,email text); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; grant usage on schema public,auth to authenticated,service_role; grant execute on function auth.uid() to authenticated,service_role; alter default privileges in schema public grant all on tables to authenticated,service_role; alter default privileges in schema public grant execute on functions to anon,authenticated,service_role; create publication supabase_realtime;`);
-  for (const name of ['20261111000000_initial.sql','20261111000001_member_names_categories.sql','20261113000000_phase2.sql','20261113000001_operations.sql','20261113000002_ai_usage.sql','20261113000003_ai_hardening.sql','20261113000004_function_privileges.sql','20261113000005_import_event_dedupe.sql']) {
+  for (const name of ['20261111000000_initial.sql','20261111000001_member_names_categories.sql','20261113000000_phase2.sql','20261113000001_operations.sql','20261113000002_ai_usage.sql','20261113000003_ai_hardening.sql','20261113000004_function_privileges.sql','20261113000005_import_event_dedupe.sql','20261113000006_category_management.sql']) {
     const sql = await readFile(`supabase/migrations/${name}`, 'utf8');
     await db.exec(sql.replace('create extension if not exists pgcrypto with schema extensions;', ''));
   }
@@ -18,6 +18,27 @@ beforeAll(async () => {
 });
 afterAll(async () => { await db.close(); });
 describe('phase 2 migration and RLS', () => {
+  it('deletes categories without deleting related records and blocks trimmed duplicate names', async () => {
+    const category = (await db.query<{id:string}>("insert into public.categories(ledger_id,name,type) values($1,'삭제 테스트','expense') returning id",[ledger])).rows[0].id;
+    await expect(db.query("insert into public.categories(ledger_id,name,type) values($1,' 삭제 테스트 ','expense')",[ledger])).rejects.toThrow();
+    await db.query("insert into public.categories(ledger_id,name,type) values($1,'삭제 테스트','income')",[ledger]);
+    await db.query("insert into public.transactions(ledger_id,type,amount,occurred_on,created_by,category_id) values($1,'expense',31,'2025-01-01',$2,$3)",[ledger,alice,category]);
+    await db.query("insert into public.recurring_items(ledger_id,name,type,amount,day_of_month,keyword,category_id) values($1,'test','expense',31,1,'test',$2)",[ledger,category]);
+    await db.query("insert into public.rules(ledger_id,keyword,created_by,category_id) values($1,'test',$2,$3)",[ledger,alice,category]);
+    await db.exec('reset role');
+    await db.query("insert into public.imports(ledger_id,owner_id,source,raw_text,dedupe_hash,category_id) values($1,$2,'sms','test','category-test',$3)",[ledger,alice,category]);
+    await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub','${bob}',false);`);
+    expect((await db.query('delete from public.categories where id=$1 returning id',[category])).rows).toHaveLength(0);
+    await db.exec(`select set_config('request.jwt.claim.sub','${alice}',false);`);
+    const counts = (await db.query<{category_id:string;count:number}>('select * from public.count_category_usage($1)',[ledger])).rows;
+    expect(Number(counts.find(r => r.category_id===category)?.count)).toBe(1);
+    await db.query('delete from public.categories where id=$1',[category]);
+    for (const table of ['transactions','recurring_items','rules','imports']) {
+      const result = await db.query<{count:number}>(`select count(*)::int as count from public.${table} where ledger_id=$1 and category_id is null and ${table==='transactions' ? 'amount=31' : table==='imports' ? "dedupe_hash='category-test'" : table==='rules' ? "keyword='test'" : "name='test'"}`,[ledger]);
+      expect(Number(result.rows[0].count)).toBe(1);
+    }
+    await db.query("delete from public.categories where ledger_id=$1 and name='삭제 테스트' and type='income'",[ledger]);
+  });
   it('blocks anonymous function execution while preserving authenticated RPC', async () => {
     const result = await db.query<{anon_allowed:boolean;auth_allowed:boolean}>("select has_function_privilege('anon','public.create_ledger(text)','execute') anon_allowed, has_function_privilege('authenticated','public.create_ledger(text)','execute') auth_allowed");
     expect(result.rows[0]).toEqual({anon_allowed:false,auth_allowed:true});

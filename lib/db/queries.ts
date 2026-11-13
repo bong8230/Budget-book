@@ -19,6 +19,13 @@ export async function updateTransaction(db: SupabaseClient, id: string, changes:
 export async function deleteTransaction(db: SupabaseClient, id: string) { return db.from('transactions').delete().eq('id', id); }
 export async function listCategories(db: SupabaseClient, ledgerId: string) { return db.from('categories').select('*').eq('ledger_id', ledgerId).order('name'); }
 export async function addCategory(db: SupabaseClient, category: Omit<Category, 'id'>) { return db.from('categories').insert(category).select().single(); }
+export async function renameCategory(db: SupabaseClient, ledgerId: string, id: string, name: string) { return db.from('categories').update({ name: name.trim() }).eq('ledger_id', ledgerId).eq('id', id).select().single(); }
+export async function deleteCategory(db: SupabaseClient, ledgerId: string, id: string) { return db.from('categories').delete().eq('ledger_id', ledgerId).eq('id', id).select().single(); }
+export async function countCategoryUsage(db: SupabaseClient, ledgerId: string): Promise<Map<string, number>> {
+  const { data, error } = await db.rpc('count_category_usage', { target_ledger: ledgerId });
+  if (error) throw error;
+  return new Map((data ?? []).map((row: { category_id: string; count: number | string }) => [row.category_id, Number(row.count)]));
+}
 export async function getBudget(db: SupabaseClient, ledgerId: string, month: string) { return db.from('monthly_budgets').select('*').eq('ledger_id', ledgerId).eq('month', month).maybeSingle(); }
 export async function setBudget(db: SupabaseClient, ledgerId: string, month: string, amount: number) { return db.from('monthly_budgets').upsert({ ledger_id: ledgerId, month, amount }).select().single(); }
 export async function listImports(db: SupabaseClient, ledgerId: string) { return db.from('imports').select('*,duplicate:transactions!imports_duplicate_ledger_fk(id,amount,occurred_on,memo)').eq('ledger_id', ledgerId).eq('status', 'pending').order('created_at', { ascending: false }); }
