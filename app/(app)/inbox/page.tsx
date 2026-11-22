@@ -1,3 +1,4 @@
+import { RuleSuggestion } from "@/components/rule-suggestion";
 import Link from "next/link";
 import { getAppContext } from "@/app/_lib/context";
 import { listCategories, listPaymentMethods, listPendingImports } from "@/lib/db/queries";
@@ -19,8 +20,8 @@ const DONE: Record<string, string> = {
   rule: "규칙을 만들었어요. 다음부터 같은 내역은 자동으로 분류돼요.",
 };
 
-export default async function InboxPage({ searchParams }: { searchParams: Promise<{ error?: string; done?: string }> }) {
-  const { error, done } = await searchParams;
+export default async function InboxPage({ searchParams }: { searchParams: Promise<{ error?: string; done?: string; suggest?: string; cat?: string }> }) {
+  const { error, done, suggest, cat } = await searchParams;
   const { db, ledger } = await getAppContext();
   const [{ data }, { data: categories }, { data: methods }] = await Promise.all([
     listPendingImports(db, ledger.id),
@@ -33,6 +34,9 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="space-y-4">
+      {suggest && cat && (categories ?? []).some((c) => c.id === cat) && (
+        <RuleSuggestion keyword={suggest.slice(0, 40)} categoryId={cat} categoryName={(categories ?? []).find((c) => c.id === cat)!.name} />
+      )}
       <header className="px-1">
         <h1 className="text-lg font-bold">확인 대기</h1>
         <p className="mt-1 text-sm text-muted">내 폰에서 가져온 입출금 알림이에요. 등록할 것만 골라주세요.</p>

@@ -1,7 +1,40 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Category, TransactionType, Transaction, PaymentMethod, Rule, RecurringItem, InstallmentPlan, InstallmentStatus, JoinRequest, MyJoinRequest } from '@/lib/db/types';
 import { recurringStatus, recurringSuggestions } from '@/lib/recurring';
-import { monthKey, shiftMonth } from '@/components/format';
+import { monthKey, shiftMonth, todayIso } from '@/components/format';
+import { normalizeMerchant } from '@/lib/categorize/dictionary';
+
+export async function merchantCategoryHistory(db: SupabaseClient, ledgerId: string): Promise<Map<string, string>> {
+  const today = todayIso();
+  const cutoff = new Date(today + 'T00:00:00Z');
+  cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 1);
+  const counts = new Map<string, Map<string, { count: number; latest: number }>>();
+  let sequence = 0;
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await db.from('transactions').select('merchant,category_id')
+      .eq('ledger_id', ledgerId).not('merchant', 'is', null).not('category_id', 'is', null)
+      .gte('occurred_on', cutoff.toISOString().slice(0, 10)).lte('occurred_on', today)
+      .order('occurred_on', { ascending: false }).order('created_at', { ascending: false })
+      .order('id', { ascending: false }).range(offset, offset + 999);
+    if (error) throw error;
+    for (const row of data ?? []) {
+      const key = normalizeMerchant(row.merchant);
+      if (!key) continue;
+      const votes = counts.get(key) ?? new Map<string, { count: number; latest: number }>();
+      const vote = votes.get(row.category_id) ?? { count: 0, latest: sequence++ };
+      vote.count++;
+      votes.set(row.category_id, vote);
+      counts.set(key, votes);
+    }
+    if (!data || data.length < 1000) break;
+  }
+  const winners = new Map<string, string>();
+  for (const [key, votes] of counts) {
+    const [id] = [...votes].sort(([, a], [, b]) => b.count - a.count || a.latest - b.latest)[0];
+    winners.set(key, id);
+  }
+  return winners;
+}
 export async function listLedgers(db: SupabaseClient) { return db.from('ledgers').select('*').order('created_at'); }
 export async function getMyLedger(db: SupabaseClient) { return db.from('ledgers').select('*').order('created_at').limit(1).maybeSingle(); }
 export async function createLedger(db: SupabaseClient, name: string) { return db.rpc('create_ledger', { ledger_name: name }); }

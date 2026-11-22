@@ -4,7 +4,9 @@ import { NextResponse } from 'next/server';
 import { parseNotification } from '@/lib/import/parse';
 import { importHash } from '@/lib/import/dedupe';
 import { notifyUsers } from '@/lib/push/notify';
-import { classifyTransfer, matchPaymentMethod, matchRule } from '@/lib/rules/match';
+import { classifyTransfer, matchRule } from '@/lib/rules/match';
+import { suggestCategory } from '@/lib/categorize';
+import { listCategories, merchantCategoryHistory } from '@/lib/db/queries';
 export const runtime = 'nodejs';
 export async function POST(request: Request) {
   const token = request.headers.get('authorization')?.match(/^Bearer ([a-f0-9]{64})$/i)?.[1];
@@ -40,21 +42,23 @@ export async function POST(request: Request) {
   const receivedAt = body.received_at ? new Date(body.received_at as string) : new Date();
   const parsed = parseNotification(body.text, receivedAt);
   if (!/입금|출금|결제|승인|사용|취소/.test(body.text)) return NextResponse.json({ status: 'skipped' }, { status: 201 });
-  const [{ data: methods, error: methodsError }, { data: rules, error: rulesError }] = await Promise.all([
+  const [{ data: methods, error: methodsError }, { data: rules, error: rulesError }, categories, history] = await Promise.all([
     db.from('payment_methods').select('*').eq('ledger_id', device.ledger_id).is('archived_at', null).order('created_at').order('id'),
     db.from('rules').select('*').eq('ledger_id', device.ledger_id).order('created_at').order('id'),
+    listCategories(db, device.ledger_id),
+    parsed.merchant ? merchantCategoryHistory(db, device.ledger_id).catch(() => null) : undefined,
   ]);
-  if (methodsError || rulesError) return NextResponse.json({ error: 'Unable to load import rules' }, { status: 500 });
+  if (methodsError || rulesError || categories.error || history === null) return NextResponse.json({ error: 'Unable to load import rules' }, { status: 503 });
   const matchingText = `${typeof body.app === 'string' ? body.app : ''}\n${body.text}`;
-  const method = matchPaymentMethod(matchingText, methods ?? []);
   const rule = matchRule(matchingText, parsed.merchant, rules ?? []);
   const type = /취소/.test(body.text) ? null : classifyTransfer(body.text, rule?.set_type ?? parsed.type);
+  const suggestion = suggestCategory({ text: matchingText, merchant: parsed.merchant, type, categories: categories.data, rules: rules ?? [], methods: methods ?? [], history });
   const { data: status, error: insertError } = await db.rpc('ingest_import', {
     target_ledger: device.ledger_id, target_owner: device.owner_id, source_value: body.source,
     raw_value: body.text, hash_value: importHash(body.text, String(body.source), body.received_at === undefined ? undefined : receivedAt.toISOString()), amount_value: parsed.amount,
     date_value: parsed.occurred_on, merchant_value: parsed.merchant, type_value: type,
-    category_value: type === 'transfer' ? null : rule?.category_id ?? null,
-    payment_value: rule?.payment_method_id ?? method?.id ?? null, rule_value: rule?.id ?? null,
+    category_value: suggestion.categoryId,
+    payment_value: suggestion.paymentMethodId, rule_value: rule?.id ?? null,
     auto_value: Boolean(rule?.auto_accept) && !/취소/.test(body.text), received_value: receivedAt.toISOString(), app_value: typeof body.app === 'string' ? body.app : null,
   });
   if (insertError) return NextResponse.json({ error: 'Unable to save import' }, { status: 500 });

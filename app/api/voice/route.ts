@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { todayIso } from '@/components/format';
-import { addTransaction, listCategories, listMembers, listPaymentMethods, listRules } from '@/lib/db/queries';
+import { addTransaction, listCategories, listMembers, listPaymentMethods, listRules, merchantCategoryHistory } from '@/lib/db/queries';
 import { notifyUsers } from '@/lib/push/notify';
 import { guessCategory } from '@/lib/voice/category';
 import { parseVoice } from '@/lib/voice/parse';
@@ -51,12 +51,13 @@ export async function POST(request: Request) {
   if (typeof text !== 'string') return text;
   const parsed = parseVoice(text, todayIso());
   if (!parsed) return fail(422, '금액이나 날짜를 확인해 주세요. 예를 들어 마트에서 3천원이라고 말해 주세요.');
-  const [categories, rules, methods, members] = await Promise.all([
+  const [categories, rules, methods, members, history] = await Promise.all([
     listCategories(db, ledger_id), listRules(db, ledger_id), listPaymentMethods(db, ledger_id), listMembers(db, ledger_id),
+    parsed.merchant ? merchantCategoryHistory(db, ledger_id).catch(() => null) : undefined,
   ]);
-  if (categories.error || rules.error || methods.error || members.error) return fail(503, '가계부 정보를 읽지 못했어요.');
+  if (categories.error || rules.error || methods.error || members.error || history === null) return fail(503, '가계부 정보를 읽지 못했어요.');
   if (!members.data.some(m => m.user_id === owner_id)) return fail(403, '이 가계부에 기록할 수 없어요.');
-  const { categoryId, paymentMethodId } = guessCategory(text, parsed.merchant, parsed.type, categories.data, rules.data, methods.data);
+  const { categoryId, paymentMethodId } = guessCategory(text, parsed.merchant, parsed.type, categories.data, rules.data, methods.data, history);
   const result = await addTransaction(db, {
     ledger_id, created_by: owner_id, type: parsed.type, amount: parsed.amount, occurred_on: parsed.occurredOn,
     merchant: parsed.merchant, memo: parsed.memo, category_id: categoryId, payment_method_id: paymentMethodId,

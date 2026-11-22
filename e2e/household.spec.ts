@@ -415,6 +415,30 @@ test("말이나 글로 쓴 문장이 바로 내역에 추가된다 (AI 없이)",
   expect(anon.status()).toBe(401);
 });
 
+test("카테고리를 고치면 규칙을 제안하고, 다음부터 그 가게는 자동 분류된다", async ({ page, context, baseURL }) => {
+  await signIn(context, alice, baseURL!);
+  await page.goto("/");
+  const box = page.getByRole("region", { name: "말로 추가" });
+  await box.getByLabel("말로 내역 추가").fill("E2E분식집에서 7천원 결제했어");
+  await box.getByRole("button", { name: "추가", exact: true }).click();
+  await expect(box.getByRole("status")).toContainText("미분류");
+
+  await box.getByRole("status").getByRole("link", { name: "수정" }).click();
+  await expect(page).toHaveURL(/\/transactions\/[0-9a-f-]+/);
+  await page.getByRole("button", { name: "생활", exact: true }).click();
+  await page.getByRole("button", { name: "저장" }).click();
+  const card = page.getByRole("region", { name: "분류 규칙 제안" });
+  await expect(card).toContainText("E2E분식집");
+  await card.getByRole("button", { name: "규칙 만들기" }).click();
+  await expect(card).toHaveCount(0);
+  await expect(page).not.toHaveURL(/suggest=/);
+
+  await page.goto("/");
+  await box.getByLabel("말로 내역 추가").fill("E2E분식집에서 8천원 결제했어");
+  await box.getByRole("button", { name: "추가", exact: true }).click();
+  await expect(box.getByRole("status")).toContainText("생활");
+});
+
 test("탈퇴하면 로그인 화면으로 가고 계정이 지워진다", async ({ page, context, baseURL }) => {
   await signIn(context, carol, baseURL!);
   await page.goto("/settings");

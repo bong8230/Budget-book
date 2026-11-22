@@ -11,6 +11,7 @@ vi.mock('@supabase/supabase-js', () => ({
   }),
 }));
 vi.mock('@/lib/db/queries', () => ({
+  merchantCategoryHistory: async () => new Map(),
   listCategories: async () => ({ data: [] }), listRules: async () => ({ data: [] }),
   listPaymentMethods: async () => ({ data: [] }),
   listMembers: async () => ({ data: [{ user_id: 'owner' }, { user_id: 'partner' }] }),

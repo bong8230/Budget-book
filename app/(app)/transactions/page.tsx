@@ -1,3 +1,4 @@
+import { RuleSuggestion } from "@/components/rule-suggestion";
 import { getAppContext } from "@/app/_lib/context";
 import { sumByType, toRows } from "@/app/_lib/rows";
 import { listCategories, listPaymentMethods, listTransactions } from "@/lib/db/queries";
@@ -13,8 +14,8 @@ function seoulToday() {
 
 export const metadata = { title: "내역 · 우리집 가계부" };
 
-export default async function TransactionsPage({ searchParams }: { searchParams: Promise<{ month?: string; view?: string; day?: string }> }) {
-  const { month: raw, view, day: rawDay } = await searchParams;
+export default async function TransactionsPage({ searchParams }: { searchParams: Promise<{ month?: string; view?: string; day?: string; suggest?: string; cat?: string }> }) {
+  const { month: raw, view, day: rawDay, suggest, cat } = await searchParams;
   const today = seoulToday();
   const month = isMonthKey(raw) ? raw : today.slice(0, 7);
   const calendar = view === "calendar";
@@ -42,6 +43,9 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
 
   return (
     <div className="space-y-4">
+      {suggest && cat && (categories ?? []).some((c) => c.id === cat) && (
+        <RuleSuggestion keyword={suggest.slice(0, 40)} categoryId={cat} categoryName={(categories ?? []).find((c) => c.id === cat)!.name} />
+      )}
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           <MonthSwitcher month={month} basePath="/transactions" query={calendar ? "view=calendar" : undefined} />

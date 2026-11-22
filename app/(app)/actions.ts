@@ -27,6 +27,7 @@ import {
   listCategories,
   listPaymentMethods,
   listRules,
+  merchantCategoryHistory,
   mergeImport,
   rejectJoin,
   renameCategory,
@@ -205,8 +206,14 @@ export async function updateTransactionAction(_: FormState, formData: FormData):
   const parsed = readTransaction(formData);
   if ("error" in parsed) return { error: parsed.error };
   if (!id) return { error: "잘못된 요청이에요" };
-  const { db } = await getAppContext();
+  const ctx = await getAppContext();
+  const { db } = ctx;
   const v = parsed.value;
+  const { data: before } = await db
+    .from("transactions")
+    .select("category_id,merchant,memo")
+    .eq("id", id)
+    .maybeSingle<{ category_id: string | null; merchant: string | null; memo: string | null }>();
   const { error } = await updateTransaction(db, id, {
     type: v.type,
     amount: v.amount,
@@ -217,7 +224,8 @@ export async function updateTransactionAction(_: FormState, formData: FormData):
   });
   if (error) return { error: "수정하지 못했어요. 다시 시도해주세요" };
   refreshAll();
-  redirect(`/transactions?month=${v.occurredOn.slice(0, 7)}`);
+  const suggest = before ? await ruleSuggestQuery(ctx, ruleKeyword(before.merchant, v.memo), v.categoryId, before.category_id) : "";
+  redirect(`/transactions?month=${v.occurredOn.slice(0, 7)}${suggest ? `&${suggest}` : ""}`);
 }
 
 export async function deleteTransactionAction(formData: FormData) {
@@ -299,6 +307,11 @@ export async function acceptImportAction(_: FormState, formData: FormData): Prom
   if (!importId) return { error: "잘못된 요청이에요" };
   const ctx = await getAppContext();
   const v = parsed.value;
+  const { data: before } = await ctx.db
+    .from("imports")
+    .select("category_id,merchant")
+    .eq("id", importId)
+    .maybeSingle<{ category_id: string | null; merchant: string | null }>();
   const { error } = await acceptImport(ctx.db, importId, {
     type: v.type,
     amount: v.amount,
@@ -311,7 +324,8 @@ export async function acceptImportAction(_: FormState, formData: FormData): Prom
   if (error) return { error: "등록하지 못했어요. 이미 처리된 내역일 수 있어요" };
   notifyAdded(ctx, v);
   refreshAll();
-  redirect("/inbox");
+  const suggest = await ruleSuggestQuery(ctx, ruleKeyword(str(formData, "merchant") || before?.merchant, null), v.categoryId, before?.category_id ?? null);
+  redirect(suggest ? `/inbox?${suggest}` : "/inbox");
 }
 
 /** 수정 없이 바로 등록 */
@@ -611,12 +625,13 @@ export async function recordVoiceAction(_prev: VoiceState, formData: FormData): 
   const parsed = parseVoice(text, todayIso());
   if (!parsed) return { ok: false, message: "금액을 알아듣지 못했어요. 예: 마트에서 3천원 결제했어" };
   const ctx = await getAppContext();
-  const [{ data: categories }, { data: rules }, { data: methods }] = await Promise.all([
+  const [{ data: categories }, { data: rules }, { data: methods }, history] = await Promise.all([
     listCategories(ctx.db, ctx.ledger.id),
     listRules(ctx.db, ctx.ledger.id),
     listPaymentMethods(ctx.db, ctx.ledger.id),
+    parsed.merchant ? merchantCategoryHistory(ctx.db, ctx.ledger.id).catch(() => undefined) : undefined,
   ]);
-  const guess = guessCategory(text, parsed.merchant, parsed.type, categories ?? [], rules ?? [], methods ?? []);
+  const guess = guessCategory(text, parsed.merchant, parsed.type, categories ?? [], rules ?? [], methods ?? [], history);
   const { data, error } = await addTransaction(ctx.db, {
     ledger_id: ctx.ledger.id,
     type: parsed.type,
@@ -634,4 +649,42 @@ export async function recordVoiceAction(_prev: VoiceState, formData: FormData): 
   const category = (categories ?? []).find((c) => c.id === guess.categoryId)?.name ?? "미분류";
   const day = parsed.occurredOn === todayIso() ? "" : ` (${Number(parsed.occurredOn.slice(5, 7))}/${Number(parsed.occurredOn.slice(8))})`;
   return { ok: true, id: (data as { id: string }).id, message: `${parsed.memo} ${formatSigned(parsed.amount, parsed.type)} · ${category}${day} 추가했어요.` };
+}
+
+/* ───────── 분류 규칙 제안 ───────── */
+
+/** 규칙 키워드로 쓸 이름: 가게 이름, 없으면 숫자 없는 짧은 메모 */
+function ruleKeyword(merchant: string | null | undefined, memo: string | null | undefined): string | null {
+  const m = (merchant ?? "").trim();
+  if (m.length >= 2 && m.length <= 40) return m;
+  const t = (memo ?? "").trim();
+  if (t.length >= 2 && t.length <= 20 && !/\d/.test(t)) return t;
+  return null;
+}
+
+/** 카테고리를 바꿨고 그 가게에 맞는 규칙이 아직 없으면 제안용 쿼리 문자열 */
+async function ruleSuggestQuery(ctx: AppContext, keyword: string | null, categoryId: string | null, before: string | null): Promise<string> {
+  if (!keyword || !categoryId || categoryId === before) return "";
+  const { data: rules } = await listRules(ctx.db, ctx.ledger.id);
+  const k = keyword.normalize("NFKC").toLowerCase();
+  if ((rules ?? []).some((r) => r.keyword.trim() && k.includes(r.keyword.trim().normalize("NFKC").toLowerCase()))) return "";
+  return `suggest=${encodeURIComponent(keyword)}&cat=${categoryId}`;
+}
+
+export async function createRuleFromSuggestionAction(keyword: string, categoryId: string, autoAccept: boolean): Promise<{ ok: boolean; error?: string }> {
+  const k = String(keyword ?? "").trim().slice(0, 40);
+  if (k.length < 2 || !UUID.test(categoryId)) return { ok: false, error: "잘못된 요청이에요" };
+  const ctx = await getAppContext();
+  const { error } = await addRule(ctx.db, {
+    ledger_id: ctx.ledger.id,
+    created_by: ctx.user.id,
+    keyword: k,
+    set_type: null,
+    category_id: categoryId,
+    payment_method_id: null,
+    auto_accept: Boolean(autoAccept),
+  });
+  if (error) return { ok: false, error: "규칙을 만들지 못했어요" };
+  refreshAll();
+  return { ok: true };
 }
