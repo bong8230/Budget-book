@@ -4,6 +4,7 @@ import { sumByType, toRows } from "@/app/_lib/rows";
 import { getMonthlyBudget, getRecurringStatus, listCategories, listPaymentMethods, listPendingImports, listTransactions } from "@/lib/db/queries";
 import { BudgetGauge } from "@/components/budget-gauge";
 import { TransactionList } from "@/components/transaction-list";
+import { VoiceAdd } from "@/components/voice-add";
 import { formatWon, monthKey, monthLabel, todayIso } from "@/components/format";
 
 export default async function HomePage() {
@@ -34,15 +35,9 @@ export default async function HomePage() {
         <span className="text-sm text-muted">{monthLabel(month)}</span>
       </header>
 
-      <Link href="/ai" className="flex items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3 active:bg-surface-2">
-        <span aria-hidden className="grid size-8 place-items-center rounded-full bg-accent text-sm font-bold text-accent-ink">
-          AI
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold">말로 기록하고 물어보기</span>
-          <span className="block truncate text-xs text-muted">“13일 마트에서 카드로 3000원” · “이번 달 식비 얼마?”</span>
-        </span>
-      </Link>
+      <section aria-label="말로 추가" className="rounded-2xl border border-line bg-surface p-3">
+        <VoiceAdd />
+      </section>
 
       <BudgetGauge limit={budget ? Number(budget.amount) : null} spent={expense} />
 

@@ -389,6 +389,32 @@ test("카테고리를 추가하고 이름을 바꾸고 지울 수 있다", async
   await expect(page.getByRole("heading", { name: "수입 카테고리 추가" })).toBeVisible();
 });
 
+test("말이나 글로 쓴 문장이 바로 내역에 추가된다 (AI 없이)", async ({ page, context, baseURL }) => {
+  await signIn(context, alice, baseURL!);
+  await page.goto("/");
+  const box = page.getByRole("region", { name: "말로 추가" });
+  await box.getByLabel("말로 내역 추가").fill("지금 E2E마트에서 3천원 결제했어. 추가해줘");
+  await box.getByRole("button", { name: "추가", exact: true }).click();
+  await expect(box.getByRole("status")).toContainText("3,000원");
+  await expect(box.getByRole("status")).toContainText("추가했어요");
+  await page.goto("/transactions");
+  await expect(page.getByText("E2E마트").first()).toBeVisible();
+
+  await box.page().goto("/");
+  await box.getByLabel("말로 내역 추가").fill("마트 다녀왔어");
+  await box.getByRole("button", { name: "추가", exact: true }).click();
+  await expect(box.getByRole("status")).toContainText("금액을 알아듣지 못했어요");
+
+  // 시리 단축어가 부르는 주소
+  const ok = await page.request.post("/api/voice", { headers: { Authorization: `Bearer ${token}` }, data: { text: "어제 E2E편의점에서 4500원 썼어" } });
+  expect(ok.ok(), await ok.text()).toBe(true);
+  expect(((await ok.json()) as { message: string }).message).toContain("4,500원");
+  const bad = await page.request.post("/api/voice", { headers: { Authorization: `Bearer ${token}` }, data: { text: "편의점" } });
+  expect(bad.status()).toBe(422);
+  const anon = await page.request.post("/api/voice", { headers: { Authorization: "Bearer wrong" }, data: { text: "마트 3천원" } });
+  expect(anon.status()).toBe(401);
+});
+
 test("탈퇴하면 로그인 화면으로 가고 계정이 지워진다", async ({ page, context, baseURL }) => {
   await signIn(context, carol, baseURL!);
   await page.goto("/settings");

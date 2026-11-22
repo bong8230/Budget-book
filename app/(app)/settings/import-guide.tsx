@@ -74,6 +74,33 @@ export function ImportGuide() {
             </ol>
             <CopyField label="웹훅 주소" value={webhook} />
             <CopyField label="본문 형식 (참고)" value={SMS_BODY} />
+
+            <h4 id="siri-guide" className="scroll-mt-4 border-t border-line pt-3 font-semibold">“시리야, 가계부”로 말해서 추가</h4>
+            <p className="text-xs text-muted">화면을 열지 않고 “마트에서 3천원 결제했어”라고 말하면 바로 추가돼요. 무료예요 (AI를 쓰지 않아요).</p>
+            <ol className="list-decimal space-y-2 pl-5">
+              <li>
+                <b>단축어</b> 앱 → <b>단축어</b> 탭 → 오른쪽 위 <b>+</b> → 이름을 <b>가계부</b>로 바꾸세요. 이 이름이 시리에게 부를 말이에요.
+              </li>
+              <li>
+                동작 <b>텍스트 받아쓰기</b> 추가 (언어: 한국어)
+              </li>
+              <li>
+                동작 <b>URL 콘텐츠 가져오기</b> 추가 → URL에 아래 <b>음성 주소</b>를 넣고 펼쳐서:
+                <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-muted">
+                  <li>방법: POST</li>
+                  <li>헤더: 키 Authorization, 값 = 위에서 복사한 Bearer 값 (문자 가져오기와 같은 토큰)</li>
+                  <li>본문 요청: JSON — 키 text, 값 = <b>받아쓴 텍스트</b></li>
+                </ul>
+              </li>
+              <li>
+                동작 <b>사전 값 가져오기</b> 추가 → 키 <code>message</code>
+              </li>
+              <li>
+                동작 <b>텍스트 말하기</b> 추가 → 시리가 “마트 3,000원 추가했어요”처럼 결과를 읽어줘요.
+              </li>
+              <li>“시리야, 가계부” → 시리가 물으면 “마트에서 3천원 결제했어”라고 말하세요.</li>
+            </ol>
+            <CopyField label="음성 주소" value={`${origin}/api/voice`} />
           </>
         ) : (
           <>
@@ -106,6 +133,9 @@ export function ImportGuide() {
             <CopyField label="본문 형식" value={ANDROID_BODY} />
             <p className="text-xs text-muted">
               같은 결제가 문자와 앱 알림으로 두 번 와도 괜찮아요. 금액이 같고 10분 안에 온 알림은 하나로 합쳐요.
+            </p>
+            <p className="rounded-xl bg-surface-2 p-3 text-xs leading-relaxed">
+              <b>말로 추가</b>: 홈 화면의 가계부 아이콘을 <b>길게 누르고 ‘말로 추가’</b>를 고르면 바로 마이크가 켜져요. 앱 첫 화면의 입력칸에 글로 써도 돼요.
             </p>
           </>
         )}

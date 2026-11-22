@@ -25,6 +25,8 @@ import {
   generateDueRecurring,
   ignoreImport,
   listCategories,
+  listPaymentMethods,
+  listRules,
   mergeImport,
   rejectJoin,
   renameCategory,
@@ -37,6 +39,8 @@ import {
 } from "@/lib/db/queries";
 import type { PaymentMethod, RecurringItem, TransactionType } from "@/lib/db/types";
 import { dueDates } from "@/lib/recurring";
+import { parseVoice } from "@/lib/voice/parse";
+import { guessCategory } from "@/lib/voice/category";
 import type { FormState } from "@/components/transaction-form";
 
 const TYPES: TransactionType[] = ["income", "expense", "transfer"];
@@ -596,4 +600,38 @@ export async function acceptSuggestionAction(formData: FormData) {
   if (error) redirect("/recurring?error=suggest");
   refreshAll();
   redirect("/recurring");
+}
+
+export type VoiceState = { ok: boolean; message: string; id?: string } | undefined;
+
+/** "마트에서 3천원 결제했어" 같은 문장을 규칙으로 해석해 바로 추가한다 (AI 미사용, 무료) */
+export async function recordVoiceAction(_prev: VoiceState, formData: FormData): Promise<VoiceState> {
+  const text = str(formData, "text", 200);
+  if (!text) return { ok: false, message: "추가할 내용을 말하거나 입력해주세요." };
+  const parsed = parseVoice(text, todayIso());
+  if (!parsed) return { ok: false, message: "금액을 알아듣지 못했어요. 예: 마트에서 3천원 결제했어" };
+  const ctx = await getAppContext();
+  const [{ data: categories }, { data: rules }, { data: methods }] = await Promise.all([
+    listCategories(ctx.db, ctx.ledger.id),
+    listRules(ctx.db, ctx.ledger.id),
+    listPaymentMethods(ctx.db, ctx.ledger.id),
+  ]);
+  const guess = guessCategory(text, parsed.merchant, parsed.type, categories ?? [], rules ?? [], methods ?? []);
+  const { data, error } = await addTransaction(ctx.db, {
+    ledger_id: ctx.ledger.id,
+    type: parsed.type,
+    amount: parsed.amount,
+    occurred_on: parsed.occurredOn,
+    category_id: guess.categoryId,
+    payment_method_id: guess.paymentMethodId,
+    merchant: parsed.merchant,
+    memo: parsed.memo,
+    created_by: ctx.user.id,
+  });
+  if (error || !data) return { ok: false, message: "저장하지 못했어요. 다시 시도해주세요." };
+  notifyAdded(ctx, { type: parsed.type, amount: parsed.amount, occurredOn: parsed.occurredOn, memo: parsed.memo });
+  refreshAll();
+  const category = (categories ?? []).find((c) => c.id === guess.categoryId)?.name ?? "미분류";
+  const day = parsed.occurredOn === todayIso() ? "" : ` (${Number(parsed.occurredOn.slice(5, 7))}/${Number(parsed.occurredOn.slice(8))})`;
+  return { ok: true, id: (data as { id: string }).id, message: `${parsed.memo} ${formatSigned(parsed.amount, parsed.type)} · ${category}${day} 추가했어요.` };
 }

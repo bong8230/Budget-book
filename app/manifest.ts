@@ -17,5 +17,9 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icon/512", sizes: "512x512", type: "image/png" },
       { src: "/icon/512", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
+    shortcuts: [
+      { name: "말로 추가", short_name: "말로 추가", url: "/voice", icons: [{ src: "/icon/192", sizes: "192x192", type: "image/png" }] },
+      { name: "직접 입력", short_name: "직접 입력", url: "/transactions/new", icons: [{ src: "/icon/192", sizes: "192x192", type: "image/png" }] },
+    ],
   };
 }
