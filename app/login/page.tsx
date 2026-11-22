@@ -19,6 +19,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           로그인 링크가 만료됐거나 잘못됐어요. 다시 받아주세요.
         </p>
       )}
+      {error === "kakao" && (
+        <p role="alert" className="mt-4 rounded-xl bg-surface p-3 text-sm text-expense">
+          카카오 로그인에 실패했어요. 잠시 후 다시 시도해주세요.
+        </p>
+      )}
       <LoginForm next={safeNext(next)} />
     </main>
   );

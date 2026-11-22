@@ -11,14 +11,9 @@ export function LoginForm({ next }: { next: string }) {
   );
   const [email, setEmail] = useState("");
 
-  async function kakao() {
+  function kakao() {
     setStatus("sending");
-    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
-    const { error } = await createClient().auth.signInWithOAuth({
-      provider: "kakao",
-      options: { redirectTo },
-    });
-    if (error) setStatus("error");
+    window.location.assign(`/auth/kakao?next=${encodeURIComponent(next)}`);
   }
 
   async function submit(e: React.FormEvent) {
