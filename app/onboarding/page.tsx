@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/db/server";
-import { createLedger, getMyLedger } from "@/lib/db/queries";
+import { createLedger, getMyJoinRequest, getMyLedger } from "@/lib/db/queries";
 
 export const metadata = { title: "가계부 만들기 · 우리집 가계부" };
 
@@ -15,8 +15,9 @@ async function create(formData: FormData) {
 
 export default async function OnboardingPage() {
   const db = await createClient();
-  const { data: ledger } = await getMyLedger(db);
+  const [{ data: ledger }, request] = await Promise.all([getMyLedger(db), getMyJoinRequest(db).catch(() => null)]);
   if (ledger) redirect("/");
+  if (request?.status === "pending") redirect("/join/waiting");
 
   return (
     <main className="safe-top mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6">

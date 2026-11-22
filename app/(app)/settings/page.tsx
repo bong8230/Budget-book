@@ -1,5 +1,7 @@
 import { getAppContext } from "@/app/_lib/context";
-import { getMonthlyBudget, listDeviceTokens } from "@/lib/db/queries";
+import { getMonthlyBudget, listDeviceTokens, listJoinRequests } from "@/lib/db/queries";
+import { approveJoinAction, rejectJoinAction } from "../actions";
+import { ConfirmButton } from "@/components/form-bits";
 import { monthKey, monthLabel } from "@/components/format";
 import { InviteButton } from "./invite-button";
 import { BudgetForm } from "./budget-form";
@@ -17,9 +19,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const { welcome } = await searchParams;
   const { db, user, ledger, members } = await getAppContext();
   const month = monthKey();
-  const [{ data: budget }, { data: devices }] = await Promise.all([
+  const isOwner = members.find((m) => m.userId === user.id)?.role === "owner";
+  const [{ data: budget }, { data: devices }, requests] = await Promise.all([
     getMonthlyBudget(db, ledger.id, `${month}-01`),
     listDeviceTokens(db, ledger.id),
+    isOwner ? listJoinRequests(db, ledger.id).catch(() => []) : Promise.resolve([]),
   ]);
 
   return (
@@ -43,7 +47,32 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           ))}
         </ul>
         <NameForm current={members.find((m) => m.userId === user.id)?.name ?? ""} />
-        {members.length < 2 && <InviteButton />}
+        {requests.length > 0 && (
+          <ul className="mt-3 space-y-2" aria-label="참여 요청">
+            {requests.map((r) => (
+              <li key={r.id} className="rounded-xl border border-accent p-3 text-sm">
+                <p>
+                  <b>{r.displayName}</b>님이 가계부 참여를 요청했어요
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <form action={approveJoinAction} className="flex-1">
+                    <input type="hidden" name="id" value={r.id} />
+                    <button type="submit" className="h-10 w-full rounded-xl bg-accent font-semibold text-accent-ink">
+                      승인
+                    </button>
+                  </form>
+                  <form action={rejectJoinAction} className="flex-1">
+                    <input type="hidden" name="id" value={r.id} />
+                    <ConfirmButton message={`${r.displayName}님의 참여 요청을 거절할까요?`} className="h-10 w-full rounded-xl border border-line font-semibold">
+                      거절
+                    </ConfirmButton>
+                  </form>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {members.length < 2 && requests.length === 0 && <InviteButton />}
       </Section>
 
       <Section title={`${monthLabel(month)} 예산`} id="budget">

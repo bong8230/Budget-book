@@ -8,6 +8,7 @@ import { formatSigned, todayIso } from "@/components/format";
 import { getAppContext } from "@/app/_lib/context";
 import {
   acceptImport,
+  approveJoin,
   addCategory,
   addPaymentMethod,
   addRecurring,
@@ -25,6 +26,7 @@ import {
   ignoreImport,
   listCategories,
   mergeImport,
+  rejectJoin,
   renameCategory,
   setDisplayName,
   setMonthlyBudget,
@@ -426,6 +428,24 @@ export async function deleteInstallmentAction(formData: FormData) {
   if (error) redirect("/recurring?error=installment");
   refreshAll();
   redirect("/recurring");
+}
+
+/* ───────── 참여 요청 ───────── */
+
+export async function approveJoinAction(formData: FormData) {
+  const id = requiredId(formData, "id");
+  const { db } = await getAppContext();
+  // 같은 화면으로 redirect 하면 가끔 멈춰서, 다시 그리기만 한다
+  const { error } = await approveJoin(db, id);
+  if (error) throw new Error("참여 요청을 승인하지 못했어요");
+  refreshAll();
+}
+
+export async function rejectJoinAction(formData: FormData) {
+  const id = requiredId(formData, "id");
+  const { db } = await getAppContext();
+  await rejectJoin(db, id);
+  refreshAll();
 }
 
 /* ───────── 카테고리 ───────── */

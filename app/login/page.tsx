@@ -8,7 +8,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <main className="safe-top mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6">
       <h1 className="text-2xl font-bold">우리집 가계부</h1>
-      <p className="mt-2 text-muted">이메일로 받은 링크를 누르면 바로 로그인돼요.</p>
+      <p className="mt-2 text-muted">{process.env.NEXT_PUBLIC_KAKAO_LOGIN === "1" ? "카카오로 바로 시작하거나, 이메일로 받은 링크로 로그인하세요." : "이메일로 받은 링크를 누르면 바로 로그인돼요."}</p>
       {deleted && (
         <p role="status" className="mt-4 rounded-xl bg-surface p-3 text-sm">
           탈퇴가 완료됐어요. 그동안 써주셔서 고마워요.

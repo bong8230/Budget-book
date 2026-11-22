@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { devices, expect, test, type Page } from "@playwright/test";
 import { admin, createTestUser, deleteTestUser, signIn, today, type TestUser } from "./helpers";
 
 /**
@@ -230,8 +230,27 @@ test("배우자가 초대로 합류하면 거래는 보이고 남의 확인 대�
   await context.clearCookies();
   await signIn(context, bob, baseURL!);
   await page.goto(path);
-  await page.getByRole("button", { name: "참여하기" }).click();
-  await expect(page).toHaveURL(new RegExp(`${baseURL}/?$`));
+  await page.getByLabel("가계부에서 보일 내 이름").fill("밥");
+  await page.getByRole("button", { name: "참여 요청" }).click();
+  await expect(page).toHaveURL(/\/join\/waiting/);
+  await expect(page.getByRole("heading", { name: "승인을 기다리고 있어요" })).toBeVisible();
+  // 승인 전에는 가계부에 들어갈 수 없다
+  await page.goto("/transactions");
+  await expect(page).toHaveURL(/\/join\/waiting/);
+
+  // 만든 사람(앨리스)이 다른 브라우저에서 승인한다
+  const owner = await context.browser()!.newContext({ ...devices["Pixel 7"], baseURL });
+  const ownerPage = await owner.newPage();
+  await signIn(owner, alice, baseURL!);
+  await ownerPage.goto("/settings#members");
+  const request = ownerPage.getByRole("list", { name: "참여 요청" }).getByRole("listitem").filter({ hasText: "밥" });
+  await request.getByRole("button", { name: "승인" }).click();
+  await expect(request).toHaveCount(0);
+  await expect(ownerPage.getByText("밥").first()).toBeVisible();
+  await owner.close();
+
+  // 대기 화면이 스스로 가계부로 넘어간다
+  await expect(page).toHaveURL(new RegExp(`${baseURL}/?$`), { timeout: 15_000 });
 
   await page.goto("/transactions");
   await expect(page.getByRole("link", { name: /점심/ })).toContainText("앨리스");
@@ -242,7 +261,8 @@ test("배우자가 초대로 합류하면 거래는 보이고 남의 확인 대�
   await context.clearCookies();
   await signIn(context, carol, baseURL!);
   await page.goto(path);
-  await page.getByRole("button", { name: "참여하기" }).click();
+  await page.getByLabel("가계부에서 보일 내 이름").fill("캐롤");
+  await page.getByRole("button", { name: "참여 요청" }).click();
   await expect(page.getByText("초대 링크가 만료됐거나 이미 사용됐어요")).toBeVisible();
 });
 
