@@ -11,3 +11,8 @@ export function matchRule(text: string, merchant: string | null, rules: Rule[]):
 export function classifyTransfer(text: string, type: TransactionType | null): TransactionType | null {
   return /카드대금|카드결제|결제대금|자동이체.*카드|내계좌|본인계좌/.test(text) ? 'transfer' : type;
 }
+/** 자동 등록은 엄격하게: 가게 이름이 읽혔으면 규칙 키워드가 가게 이름에 있어야 한다(다른 가게 알림 본문에만 있는 경우 제외) */
+export function ruleCoversMerchant(rule: Rule, merchant: string | null): boolean {
+  if (!merchant?.trim()) return true;
+  return normalize(merchant).includes(normalize(rule.keyword.trim()));
+}

@@ -1,0 +1,18 @@
+import { describe, expect, it } from 'vitest';
+import type { Rule } from '@/lib/db/types';
+import { ruleCoversMerchant } from './match';
+
+const rule = (keyword: string) => ({ id: 'r', ledger_id: 'l', keyword, category_id: 'c', set_type: null, payment_method_id: null, auto_accept: true, created_by: null, created_at: '2026-01-01' }) as Rule;
+
+describe('ruleCoversMerchant', () => {
+  it('가게 이름에 키워드가 있으면 자동 등록 대상', () => {
+    expect(ruleCoversMerchant(rule('스타벅스'), '스타벅스 강남점')).toBe(true);
+    expect(ruleCoversMerchant(rule('ＧＳ25'), 'gs25 역삼')).toBe(true);
+  });
+  it('다른 가게 알림 본문에만 키워드가 있으면 제외', () => {
+    expect(ruleCoversMerchant(rule('스타벅스'), '이디야커피')).toBe(false);
+  });
+  it('가게 이름을 못 읽었으면 본문 매칭을 따른다', () => {
+    expect(ruleCoversMerchant(rule('급여'), null)).toBe(true);
+  });
+});

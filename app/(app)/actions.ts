@@ -324,7 +324,7 @@ export async function acceptImportAction(_: FormState, formData: FormData): Prom
   if (error) return { error: "등록하지 못했어요. 이미 처리된 내역일 수 있어요" };
   notifyAdded(ctx, v);
   refreshAll();
-  const suggest = await ruleSuggestQuery(ctx, ruleKeyword(str(formData, "merchant") || before?.merchant, null), v.categoryId, before?.category_id ?? null);
+  const suggest = await ruleSuggestQuery(ctx, ruleKeyword(str(formData, "merchant") || before?.merchant, v.memo), v.categoryId, before?.category_id ?? null);
   redirect(suggest ? `/inbox?${suggest}` : "/inbox");
 }
 
@@ -493,6 +493,8 @@ export async function deleteCategoryAction(formData: FormData) {
   const id = requiredId(formData, "id");
   const type = formData.get("type") === "income" ? "income" : "expense";
   const { db, ledger } = await getAppContext();
+  // 이 카테고리로 자동 등록하던 규칙은 카테고리가 비면 엉뚱하게 자동 저장될 수 있어 자동 등록을 끈다
+  await db.from("rules").update({ auto_accept: false }).eq("ledger_id", ledger.id).eq("category_id", id).eq("auto_accept", true);
   const { error } = await deleteCategory(db, ledger.id, id);
   if (error) redirect(`/settings/categories?type=${type}&error=delete`);
   refreshAll();
@@ -629,8 +631,10 @@ export async function recordVoiceAction(_prev: VoiceState, formData: FormData): 
     listCategories(ctx.db, ctx.ledger.id),
     listRules(ctx.db, ctx.ledger.id),
     listPaymentMethods(ctx.db, ctx.ledger.id),
-    parsed.merchant ? merchantCategoryHistory(ctx.db, ctx.ledger.id).catch(() => undefined) : undefined,
+    parsed.merchant ? merchantCategoryHistory(ctx.db, ctx.ledger.id).catch(() => null) : undefined,
   ]);
+  // 분류에 필요한 정보를 못 읽었으면 엉뚱한 분류로 저장하지 않는다
+  if (!categories || !rules || history === null) return { ok: false, message: "잠시 연결이 불안정해요. 다시 시도해주세요." };
   const guess = guessCategory(text, parsed.merchant, parsed.type, categories ?? [], rules ?? [], methods ?? [], history);
   const { data, error } = await addTransaction(ctx.db, {
     ledger_id: ctx.ledger.id,
@@ -675,6 +679,11 @@ export async function createRuleFromSuggestionAction(keyword: string, categoryId
   const k = String(keyword ?? "").trim().slice(0, 40);
   if (k.length < 2 || !UUID.test(categoryId)) return { ok: false, error: "잘못된 요청이에요" };
   const ctx = await getAppContext();
+  // 그사이 같은 가게 규칙이 생겼으면(배우자가 먼저 저장 등) 겹쳐 만들지 않는다
+  const { data: rules } = await listRules(ctx.db, ctx.ledger.id);
+  const nk = k.normalize("NFKC").toLowerCase();
+  if ((rules ?? []).some((r) => r.keyword.trim() && nk.includes(r.keyword.trim().normalize("NFKC").toLowerCase())))
+    return { ok: false, error: "이미 이 가게에 맞는 규칙이 있어요. 설정 › 자동 분류 규칙에서 확인해주세요" };
   const { error } = await addRule(ctx.db, {
     ledger_id: ctx.ledger.id,
     created_by: ctx.user.id,
@@ -682,7 +691,7 @@ export async function createRuleFromSuggestionAction(keyword: string, categoryId
     set_type: null,
     category_id: categoryId,
     payment_method_id: null,
-    auto_accept: Boolean(autoAccept),
+    auto_accept: autoAccept === true,
   });
   if (error) return { ok: false, error: "규칙을 만들지 못했어요" };
   refreshAll();
