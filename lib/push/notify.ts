@@ -35,3 +35,16 @@ export async function notifyLedger(ledgerId: string, exceptUserId: string, paylo
   if (!members?.some(member => member.user_id === user.id)) return;
   await notifyUsers(ledgerId, members.filter(member => member.user_id !== user.id).map(member => member.user_id), payload);
 }
+
+/** Notify the owner only after verifying the pending request belongs to the signed-in requester. */
+export async function notifyJoinRequest(requestId: string): Promise<void> {
+  const db = await createClient();
+  const { data: { user } } = await db.auth.getUser();
+  if (!user) return;
+  const { data: request, error } = await db.from('ledger_join_requests').select('ledger_id,display_name').eq('id', requestId).eq('user_id', user.id).eq('status', 'pending').maybeSingle();
+  if (error || !request) return;
+  const admin = createAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
+  const { data: owners, error: ownerError } = await admin.from('ledger_members').select('user_id').eq('ledger_id', request.ledger_id).eq('role', 'owner');
+  if (ownerError || !owners?.length) return;
+  await notifyUsers(request.ledger_id, owners.map(owner => owner.user_id), { title: '가계부 참여 요청', body: `${request.display_name}님이 참여를 요청했어요.`, url: '/settings' });
+}

@@ -1,11 +1,25 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Category, TransactionType, Transaction, PaymentMethod, Rule, RecurringItem, InstallmentPlan, InstallmentStatus } from '@/lib/db/types';
+import type { Category, TransactionType, Transaction, PaymentMethod, Rule, RecurringItem, InstallmentPlan, InstallmentStatus, JoinRequest, MyJoinRequest } from '@/lib/db/types';
 import { recurringStatus, recurringSuggestions } from '@/lib/recurring';
 export async function listLedgers(db: SupabaseClient) { return db.from('ledgers').select('*').order('created_at'); }
 export async function getMyLedger(db: SupabaseClient) { return db.from('ledgers').select('*').order('created_at').limit(1).maybeSingle(); }
 export async function createLedger(db: SupabaseClient, name: string) { return db.rpc('create_ledger', { ledger_name: name }); }
 export async function createInvite(db: SupabaseClient, ledgerId: string) { return db.rpc('create_invite', { target_ledger: ledgerId }); }
 export async function joinLedger(db: SupabaseClient, code: string) { return db.rpc('join_ledger', { invite_code: code }); }
+export async function requestJoin(db: SupabaseClient, code: string, name: string) { return db.rpc('request_join', { invite_code: code, display_name: name }); }
+export async function approveJoin(db: SupabaseClient, id: string) { return db.rpc('approve_join', { request_id: id }); }
+export async function rejectJoin(db: SupabaseClient, id: string) { return db.rpc('reject_join', { request_id: id }); }
+export async function getMyJoinRequest(db: SupabaseClient): Promise<MyJoinRequest | null> {
+  const { data, error } = await db.rpc('my_join_request').maybeSingle();
+  if (error) throw error;
+  const row = data as { id: string; status: MyJoinRequest['status']; ledger_name: string; created_at: string } | null;
+  return row ? { id: row.id, status: row.status, ledgerName: row.ledger_name, createdAt: row.created_at } : null;
+}
+export async function listJoinRequests(db: SupabaseClient, ledgerId: string): Promise<JoinRequest[]> {
+  const { data, error } = await db.from('ledger_join_requests').select('*').eq('ledger_id', ledgerId).eq('status', 'pending').order('created_at');
+  if (error) throw error;
+  return (data ?? []).map(row => ({ id: row.id, ledgerId: row.ledger_id, userId: row.user_id, displayName: row.display_name, status: row.status, createdAt: row.created_at, decidedAt: row.decided_at, decidedBy: row.decided_by }));
+}
 export async function listMembers(db: SupabaseClient, ledgerId: string) { return db.from('ledger_members').select('*').eq('ledger_id', ledgerId); }
 export async function setDisplayName(db: SupabaseClient, ledgerId: string, name: string) { return db.rpc('set_display_name', { target_ledger: ledgerId, name }); }
 export async function listTransactions(db: SupabaseClient, ledgerId: string, month: string) {

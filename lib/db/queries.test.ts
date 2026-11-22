@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { listTransactions, listTransactionsRange, renameCategory, deleteCategory, countCategoryUsage } from '@/lib/db/queries';
+import { listTransactions, listTransactionsRange, renameCategory, deleteCategory, countCategoryUsage, requestJoin, approveJoin, rejectJoin, getMyJoinRequest, listJoinRequests } from '@/lib/db/queries';
 
 function makeClient(count: number, failAt?: number) {
   const rows = Array.from({ length: count }, (_, i) => ({ id: String(i) }));
@@ -24,6 +24,23 @@ describe('transaction pagination', () => {
     const { db } = makeClient(1200, 1000);
     const result = await listTransactionsRange(db, 'ledger', '2026-01', '2026-11');
     expect(result.data).toBeNull(); expect(result.error).toBeTruthy();
+  });
+});
+describe('join requests', () => {
+  it('calls the approval RPCs with their required arguments', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 'request', error: null });
+    const db = { rpc } as unknown as SupabaseClient;
+    await requestJoin(db, 'code', '이름'); await approveJoin(db, 'request'); await rejectJoin(db, 'request');
+    expect(rpc).toHaveBeenCalledWith('request_join', { invite_code: 'code', display_name: '이름' });
+    expect(rpc).toHaveBeenCalledWith('approve_join', { request_id: 'request' });
+    expect(rpc).toHaveBeenCalledWith('reject_join', { request_id: 'request' });
+  });
+  it('returns typed request data in UI form', async () => {
+    const row = { id:'r', ledger_id:'l', user_id:'u', display_name:'이름', status:'pending', created_at:'today', decided_at:null, decided_by:null };
+    const builder = { select() { return this; }, eq() { return this; }, order: vi.fn().mockResolvedValue({ data:[row], error:null }) };
+    const db = { from: () => builder, rpc: () => ({ maybeSingle: async () => ({ data:{ id:'r',status:'pending',ledger_name:'가족',created_at:'today' },error:null }) }) } as unknown as SupabaseClient;
+    expect((await listJoinRequests(db, 'l'))[0].displayName).toBe('이름');
+    expect((await getMyJoinRequest(db))?.ledgerName).toBe('가족');
   });
 });
 describe('category operations', () => {

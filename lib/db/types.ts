@@ -1,6 +1,8 @@
 export type TransactionType = 'income' | 'expense' | 'transfer';
 export type Ledger = { id: string; name: string; created_by: string | null; created_at: string };
 export type LedgerMember = { ledger_id: string; user_id: string; role: 'owner' | 'member'; display_name: string; joined_at: string };
+export type JoinRequest = { id: string; ledgerId: string; userId: string; displayName: string; status: 'pending' | 'approved' | 'rejected'; createdAt: string; decidedAt: string | null; decidedBy: string | null };
+export type MyJoinRequest = Pick<JoinRequest, 'id' | 'status' | 'createdAt'> & { ledgerName: string };
 export type Category = { id: string; ledger_id: string; name: string; type: 'income' | 'expense' };
 export type Transaction = { id: string; ledger_id: string; type: TransactionType; amount: number; occurred_on: string; category_id: string | null; payment_method_id: string | null; merchant: string | null; memo: string; created_by: string | null; source: 'manual' | 'import' | 'ai'; installment_plan_id?: string | null; installment_no?: number | null; recurring_item_id?: string | null; created_at: string; updated_at: string };
 export type MonthlyBudget = { ledger_id: string; month: string; amount: number };
