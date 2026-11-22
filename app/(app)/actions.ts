@@ -494,7 +494,8 @@ export async function deleteCategoryAction(formData: FormData) {
   const type = formData.get("type") === "income" ? "income" : "expense";
   const { db, ledger } = await getAppContext();
   // 이 카테고리로 자동 등록하던 규칙은 카테고리가 비면 엉뚱하게 자동 저장될 수 있어 자동 등록을 끈다
-  await db.from("rules").update({ auto_accept: false }).eq("ledger_id", ledger.id).eq("category_id", id).eq("auto_accept", true);
+  const { error: offError } = await db.from("rules").update({ auto_accept: false }).eq("ledger_id", ledger.id).eq("category_id", id).eq("auto_accept", true);
+  if (offError) redirect(`/settings/categories?type=${type}&error=delete`);
   const { error } = await deleteCategory(db, ledger.id, id);
   if (error) redirect(`/settings/categories?type=${type}&error=delete`);
   refreshAll();
@@ -634,7 +635,7 @@ export async function recordVoiceAction(_prev: VoiceState, formData: FormData): 
     parsed.merchant ? merchantCategoryHistory(ctx.db, ctx.ledger.id).catch(() => null) : undefined,
   ]);
   // 분류에 필요한 정보를 못 읽었으면 엉뚱한 분류로 저장하지 않는다
-  if (!categories || !rules || history === null) return { ok: false, message: "잠시 연결이 불안정해요. 다시 시도해주세요." };
+  if (!categories || !rules || !methods || history === null) return { ok: false, message: "잠시 연결이 불안정해요. 다시 시도해주세요." };
   const guess = guessCategory(text, parsed.merchant, parsed.type, categories ?? [], rules ?? [], methods ?? [], history);
   const { data, error } = await addTransaction(ctx.db, {
     ledger_id: ctx.ledger.id,
@@ -680,9 +681,10 @@ export async function createRuleFromSuggestionAction(keyword: string, categoryId
   if (k.length < 2 || !UUID.test(categoryId)) return { ok: false, error: "잘못된 요청이에요" };
   const ctx = await getAppContext();
   // 그사이 같은 가게 규칙이 생겼으면(배우자가 먼저 저장 등) 겹쳐 만들지 않는다
-  const { data: rules } = await listRules(ctx.db, ctx.ledger.id);
+  const { data: rules, error: listError } = await listRules(ctx.db, ctx.ledger.id);
+  if (listError || !rules) return { ok: false, error: "잠시 연결이 불안정해요. 다시 시도해주세요" };
   const nk = k.normalize("NFKC").toLowerCase();
-  if ((rules ?? []).some((r) => r.keyword.trim() && nk.includes(r.keyword.trim().normalize("NFKC").toLowerCase())))
+  if (rules.some((r) => r.keyword.trim() && nk.includes(r.keyword.trim().normalize("NFKC").toLowerCase())))
     return { ok: false, error: "이미 이 가게에 맞는 규칙이 있어요. 설정 › 자동 분류 규칙에서 확인해주세요" };
   const { error } = await addRule(ctx.db, {
     ledger_id: ctx.ledger.id,

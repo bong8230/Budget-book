@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     category_value: suggestion.categoryId,
     payment_value: suggestion.paymentMethodId, rule_value: rule?.id ?? null,
     // 자동 등록: 규칙 키워드가 가게 이름에 맞고, 규칙에 카테고리가 있으면 그 카테고리가 실제로 적용됐을 때만(유형이 안 맞거나 취소면 대기함으로)
-    auto_value: Boolean(rule?.auto_accept) && !!rule && ruleCoversMerchant(rule, parsed.merchant) && type !== null && (!rule?.category_id || suggestion.source === 'rule') && !/취소/.test(body.text), received_value: receivedAt.toISOString(), app_value: typeof body.app === 'string' ? body.app : null,
+    auto_value: Boolean(rule?.auto_accept) && !!rule && ruleCoversMerchant(rule, parsed.merchant, body.text) && type !== null && (!rule?.category_id || suggestion.source === 'rule') && !/취소/.test(body.text), received_value: receivedAt.toISOString(), app_value: typeof body.app === 'string' ? body.app : null,
   });
   if (insertError) return NextResponse.json({ error: 'Unable to save import' }, { status: 500 });
   if (status === 'accepted') {
