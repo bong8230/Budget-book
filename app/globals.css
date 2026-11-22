@@ -72,3 +72,21 @@ body {
 .safe-top {
   padding-top: env(safe-area-inset-top);
 }
+
+/* Tailwind v4는 버튼 커서를 기본값으로 두므로, 누를 수 있는 요소는 손가락 커서로 */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"],
+  [role="radio"],
+  summary,
+  label[for],
+  select,
+  input[type="checkbox"],
+  input[type="radio"] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
