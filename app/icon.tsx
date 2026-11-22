@@ -14,33 +14,12 @@ export default async function Icon({ id }: { id: Promise<string> | string }) {
 
 export function AppMark({ size }: { size: number }) {
   return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        background: "#1f6f5c",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <div
-        style={{
-          width: size * 0.5,
-          height: size * 0.5,
-          borderRadius: size * 0.08,
-          background: "#f6f5f1",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          gap: size * 0.05,
-          padding: size * 0.08,
-        }}
-      >
-        <div style={{ height: size * 0.04, background: "#1f6f5c", borderRadius: size * 0.02 }} />
-        <div style={{ height: size * 0.04, width: "70%", background: "#1f6f5c", borderRadius: size * 0.02 }} />
-        <div style={{ height: size * 0.04, width: "45%", background: "#b4472f", borderRadius: size * 0.02 }} />
-      </div>
+    <div style={{ display: "flex", width: size, height: size, background: "#1f6f5c" }}>
+      <svg width={size} height={size} viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M118 239L256 126L394 239" stroke="#F6F5F1" strokeWidth="27" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M151 226V347C151 367 167 383 187 383H325C345 383 361 367 361 347V226" fill="#F6F5F1" />
+        <path d="M256 336C247 328 207 305 207 277C207 258 230 250 244 264L256 276L268 264C282 250 305 258 305 277C305 305 265 328 256 336Z" fill="#B4472F" />
+      </svg>
     </div>
   );
 }
