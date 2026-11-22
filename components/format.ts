@@ -12,16 +12,18 @@ export function formatSigned(amount: number, type: "income" | "expense" | "trans
   return formatWon(amount);
 }
 
-/** "2026-11" 형태의 월 키 */
+/** 서버(Vercel, UTC)와 폰이 같은 날짜를 보도록 항상 한국 시간으로 계산한다 */
+const seoulDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" });
+
+/** "2026-11" 형태의 월 키 (한국 시간) */
 export function monthKey(date: Date = new Date()): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
+  return seoulDate.format(date).slice(0, 7);
 }
 
 export function shiftMonth(key: string, delta: number): string {
   const [y, m] = key.split("-").map(Number);
-  return monthKey(new Date(y, m - 1 + delta, 1));
+  const total = y * 12 + (m - 1) + delta;
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}`;
 }
 
 export function isMonthKey(value: unknown): value is string {
@@ -40,10 +42,7 @@ export function dayLabel(isoDate: string): string {
   return `${d}일 ${weekday}`;
 }
 
-/** 로컬 기준 오늘 "YYYY-MM-DD" */
+/** 한국 시간 기준 오늘 "YYYY-MM-DD" */
 export function todayIso(): string {
-  const now = new Date();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${m}-${d}`;
+  return seoulDate.format(new Date());
 }

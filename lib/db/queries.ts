@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Category, TransactionType, Transaction, PaymentMethod, Rule, RecurringItem, InstallmentPlan, InstallmentStatus, JoinRequest, MyJoinRequest } from '@/lib/db/types';
 import { recurringStatus, recurringSuggestions } from '@/lib/recurring';
+import { monthKey, shiftMonth } from '@/components/format';
 export async function listLedgers(db: SupabaseClient) { return db.from('ledgers').select('*').order('created_at'); }
 export async function getMyLedger(db: SupabaseClient) { return db.from('ledgers').select('*').order('created_at').limit(1).maybeSingle(); }
 export async function createLedger(db: SupabaseClient, name: string) { return db.rpc('create_ledger', { ledger_name: name }); }
@@ -111,8 +112,8 @@ export async function getRecurringStatus(db: SupabaseClient, ledgerId: string, m
   return recurringStatus(items.data ?? [], transactions.data ?? [], month);
 }
 export async function suggestRecurring(db: SupabaseClient, ledgerId: string) {
-  const now = new Date();
-  const months = [2, 1, 0].map(offset => { const date = new Date(Date.UTC(now.getFullYear(), now.getMonth() - offset, 1)); return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`; });
+  const currentMonth = monthKey();
+  const months = [-2, -1, 0].map(offset => shiftMonth(currentMonth, offset));
   const [items, transactions] = await Promise.all([listRecurring(db, ledgerId), listTransactionsRange(db, ledgerId, months[0], months[2])]);
   if (items.error) throw items.error;
   if (transactions.error) throw transactions.error;

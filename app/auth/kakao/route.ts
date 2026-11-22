@@ -22,7 +22,7 @@ export function GET(request: NextRequest) {
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", `${origin}/auth/kakao/callback`);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", "openid profile_nickname profile_image");
+  url.searchParams.set("scope", "openid,profile_nickname,profile_image");
   url.searchParams.set("state", state);
   // Supabase는 원래 nonce의 SHA-256(hex)이 토큰에 들어 있는지 확인한다
   url.searchParams.set("nonce", createHash("sha256").update(nonce).digest("hex"));
